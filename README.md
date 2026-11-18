@@ -10,6 +10,8 @@ Posible estructura de carpetas:
 
 ```text
 projectcapstone/
+├── docs/
+│   └── contrato_api.md
 ├── README.md
 ├── requirements.txt
 ├── Dockerfile
