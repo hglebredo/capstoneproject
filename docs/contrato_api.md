@@ -4,7 +4,7 @@
 >
 > Primero lo que la API acepta y devuelve; después cómo se conecta por dentro con el agente del PB2 y con Postgres.
 >
-> **Versión 2.** Base de Héctor + ajustes de David tras leer el `AgentService` del PB2 (ver §10, "Cambios respecto a la v1").
+> **Versión 2.** Base de Héctor + ajustes de David tras leer el `AgentService` del PB2 (ver §11, "Cambios respecto a la v1").
 
 ---
 
