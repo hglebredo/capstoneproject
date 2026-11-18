@@ -138,11 +138,9 @@ class MessageOut(BaseModel):
 
 * `DATABASE_URL` 
 * `API_KEY` 
-* `LLM_PROVIDER`          # "ollama" | "huggingface" | "google"
+* `LLM_PROVIDER`          # "google"
 * clave del LLM según el proveedor:
-    - Ollama: no hace falta API key (sirve localmente)
-    - HuggingFace: `HUGGINGFACE_API_KEY`
-    - (actualmente también previsto `GEMINI_API_KEY`)
+    - actualmente `GEMINI_API_KEY` para provedor "google"
 * `CORS_ORIGINS`  
 * `ASK_TIMEOUT_SECONDS`  
 * `RATE_LIMIT_PER_MINUTE` 
