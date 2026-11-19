@@ -25,6 +25,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+.codegraph/
 
 # PyInstaller
 #   Usually these files are written by a python script from a template
@@ -220,13 +221,9 @@ __marimo__/
 .streamlit/secrets.toml
 
 # PB2 / PB3
-output/
 storage/
 uploads/
-<<<<<<< HEAD
 .tmp/
 
 
 
-=======
->>>>>>> 2d6bc826b41b6030760aff5d9a226bf231b3aaee

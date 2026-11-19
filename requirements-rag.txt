@@ -67,3 +67,4 @@ Pygments
 faiss-cpu
 
 llm>=0.38
+pypdf

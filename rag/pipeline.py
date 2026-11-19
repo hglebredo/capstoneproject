@@ -1,6 +1,5 @@
 """
 rag/pipeline.py
-Encadena PREFLIGHT -> LOAD -> CLEAN -> TAG -> CHUNK -> EMBED -> SCORING -> DEDUP -> INDEX.
 Encadena PREFLIGHT → LOAD → CLEAN → TAG → CHUNK → EMBED → SCORING → DEDUP → INDEX.
 PREFLIGHT garantiza que EMBED_MODEL esté disponible en EMBED_PROVIDER antes de empezar.
 Es el punto de entrada que importa tu aplicación [9].
@@ -48,14 +47,13 @@ from .embed import (
     exportar_json,
     verificar_modelo_disponible,
 )
+from .file_hash import verificar_archivos_al_final
 from .index import indexar, obtener_guid_chroma
 from .informe import generar_informe
 from .load import cargar_archivos
 from .tsd.dedup import deduplicar
 from .tsd.scoring import puntuar
 from .tsd.tag import etiquetar
-from .file_hash import verificar_archivos_al_final
-from .load import cargar_archivos
 
 
 def _log(fase: str, msg: str) -> None:
@@ -81,9 +79,6 @@ def _comprobar_dim(dim: int, embed_dim: int,
         (nivel, mensaje) donde nivel ∈ {"vacio", "ok", "info", "aviso"}:
         - "vacio": no hay embeddings (corpus vacío).
         - "ok":    dim == EMBED_DIM y no hay dim máxima declarada mayor.
-        - "info":  EMBED_DIM < dim máxima del modelo -> el índice se crea con
-            EMBED_DIM (se informa de la dim máxima que maneja el modelo).
-        - "aviso": EMBED_DIM > dim generada -> el índice se crea con la dim
         - "info":  EMBED_DIM < dim máxima del modelo → el índice se crea con
             EMBED_DIM (se informa de la dim máxima que maneja el modelo).
         - "aviso": EMBED_DIM > dim generada → el índice se crea con la dim
@@ -94,7 +89,6 @@ def _comprobar_dim(dim: int, embed_dim: int,
     if embed_dim > dim:
         return "aviso", (
             f"EMBED_DIM ({embed_dim}) es mayor que la dim generada ({dim}): "
-            f"el índice se crea con {dim} dims -  la dim del índice son las "
             f"el índice se crea con {dim} dims — la dim del índice son las "
             f"{dim} dimensiones que genera el modelo"
         )
@@ -207,7 +201,6 @@ def ejecutar_pipeline(
     # --- LOAD
     t_load0 = time.perf_counter()
     _log("LOAD", "inicio")
-    documentos = cargar_archivos(rutas)
     auditoria_archivos: list[dict] = []
     documentos = cargar_archivos(
         rutas,
@@ -237,7 +230,6 @@ def ejecutar_pipeline(
         _crono("TAG", t_tag)
         _log("TAG", f"{n_fuentes} fuentes etiquetadas")
 
-    # --- CHUNK -> hereda doc_category, tags, relevancia_llm del documento padre [7]
     # --- CHUNK → hereda doc_category, tags, relevancia_llm del documento padre [7]
     _log("CHUNK", "inicio")
     t_chunk0 = time.perf_counter()

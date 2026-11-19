@@ -1,9 +1,8 @@
-"""Paquete rag - RAG pipeline de Deporte Municipal Madrid.
+"""Paquete rag - RAG pipeline de Deporte Municipal Madrid. 
 
 Submódulos principales:
     config      · Variables de entorno (proveedores, modelos, rutas)
     logic       · Orquestador online: responder(), rag_ask()
-    pipeline    · Pipeline offline completo: ejecutar_pipeline()
     load        · Carga de documentos (PDF, CSV, TXT, MD)
     clean       · Limpieza y normalización por formato
     chunk       · Troceado en fragmentos (RecursiveCharacterTextSplitter)
@@ -27,7 +26,16 @@ API pública (desde la raíz):
     from rag_utils import init_rag_db  # punto de entrada portable
 """
 from .logic import rag_ask, responder
-from .pipeline import ejecutar_pipeline
+
+
+def __getattr__(name):
+    """Lazy import para evitar el warning de sys.modules con `python -m rag.pipeline`."""
+    if name == "ejecutar_pipeline":
+        from .pipeline import ejecutar_pipeline as _ep
+        return _ep
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 from .load import _formato_documento
 
 __all__ = ["responder", "rag_ask", "ejecutar_pipeline", "_formato_documento"]

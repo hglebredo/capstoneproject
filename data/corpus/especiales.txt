@@ -9,5 +9,5 @@
 #
 # nombre_de_archivo: OCR
 
-PiscinasAireLibre2026.pdf: TAB
+# NOT_PiscinasAireLibre2026.pdf: TAB
 PreciosPublicos2026.pdf: TAB
