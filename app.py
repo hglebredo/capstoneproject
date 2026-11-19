@@ -1,14 +1,19 @@
-"""API FastAPI del PB3: publica el agente del PB2 como servicio.
+"""
+API FastAPI del PB3 — el agente del PB2 publicado como servicio.
 
-FastAPI solo traduce HTTP <-> AgentService; el grafo no se toca.
+Mismo patrón que los workouts de los Sprints 14 y 15:
+FastAPI adapta; el agente decide. Esta capa traduce HTTP ↔ AgentService
+y no reescribe el grafo.
 
-Rutas públicas:    /, /docs, /health
-Rutas protegidas (?api_key=):
-  POST /ask                    un turno del agente
-  POST /approve                aprueba o rechaza el plan (HITL)
-  GET  /threads/{id}/messages  historial guardado en Postgres
+  POST /ask     → AgentService.procesar_turno (+ resolver_plan si auto_aprobar)
+  POST /approve → AgentService.resolver_plan (HITL)
+  GET  /threads/{id}/messages → historial en Postgres (src/db.py)
 
-Arranque: uvicorn app:app --reload --port 8000  ->  http://127.0.0.1:8000/docs
+Público: /, /docs, /health
+Protegido (?api_key=): /ask, /approve, /threads/{id}/messages
+
+Arranque:
+  uvicorn app:app --reload --port 8000   →  http://127.0.0.1:8000/docs
 """
 
 import logging
@@ -28,13 +33,15 @@ from schemas import ApproveIn, AskIn, AskOut, HealthOut, MessageOut
 from security import require_api_key
 from src import db
 
-# Logs sin secretos
+# Logs a consola. Nunca logueamos API_KEY, la clave de Gemini ni DATABASE_URL.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-# Errores del agente → HTTP. El agente lanza ValueError("CODIGO: mensaje") y aquí se traduce.
+# Errores del AgentService (PB2) → código HTTP.
+# 409 = conflicto de estado del HITL (como el 409 de negocio del Sprint 16).
+# 400 = no hay plan que aprobar (como en el Sprint 14).
 ERRORES_AGENTE = {
     "HITL_PENDING": 409,
     "REQUEST_INCOMPLETE": 409,
@@ -43,11 +50,13 @@ ERRORES_AGENTE = {
     "HITL_NOT_PENDING": 400,
 }
 
-# Una sola instancia del agente, viva mientras dure el proceso. Se crea en lifespan().
+# Una sola instancia del agente para todo el proceso (se crea en lifespan).
+# Si se creara por petición, /approve no encontraría el plan en MemorySaver.
 _agente = None
 
-# Pregunta pendiente por hilo, para guardar el turno completo tras /approve.
-# Vive en RAM: un reinicio pierde el HITL a medias; el historial SQL no.
+# Última pregunta por hilo, para guardar el turno completo tras /approve
+# (patrón _last_pregunta del Sprint 15). Vive en RAM: un reinicio pierde el
+# HITL a medias igual que MemorySaver; el historial SQL no se pierde.
 _pregunta_pendiente: dict[str, str] = {}
 
 
@@ -78,14 +87,14 @@ app.add_middleware(
 )
 
 
-# --- Helpers ---
-
+# --- Helpers -----------------------------------------------------------------
 
 
 def _con_timeout(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-    """Ejecuta fn en un hilo y deja de esperar a los ASK_TIMEOUT_SECONDS.
+    """Ejecuta fn en un hilo y corta la espera a los ASK_TIMEOUT_SECONDS (Sprint 15).
 
-    El hilo no se puede matar: tras el 504 el agente sigue en segundo plano.
+    shutdown(wait=False): el 504 sale a tiempo. Python no puede matar el hilo:
+    el agente termina en segundo plano (sigue gastando cuota).
     """
     pool = ThreadPoolExecutor(max_workers=1)
     future = pool.submit(fn, *args, **kwargs)
@@ -126,7 +135,8 @@ def _a_ask_out(estado: dict, thread_id: str) -> AskOut:
 
 
 def _guardar_si_cerrado(thread_id: str, pregunta: str, estado: dict) -> None:
-    """Guarda el turno en Postgres si ya no espera HITL y hay respuesta."""
+    """Puente API → Postgres. Guarda si el turno ya no espera HITL y hay respuesta
+    (aprobado, rechazado o sin plan), como en el Sprint 15."""
     respuesta = (estado.get("final_answer") or "").strip()
     if estado.get("pendiente_hitl") or not respuesta:
         return
@@ -138,7 +148,7 @@ def _log(metodo: str, ruta: str, thread_id: str, t0: float, status: int) -> None
     logger.info("%s %s thread_id=%s duration_ms=%s status=%s", metodo, ruta, thread_id, duration_ms, status)
 
 
-# --- Rutas públicas ----
+# --- Rutas públicas ----------------------------------------------------------
 
 
 @app.get("/", include_in_schema=False)
@@ -156,14 +166,16 @@ def health() -> HealthOut:
     return HealthOut(status="ok" if ok else "degraded", storage="postgres", db_ok=ok)
 
 
-# --- Rutas protegidas ----
+# --- Rutas protegidas --------------------------------------------------------
+
 
 @app.post("/ask", response_model=AskOut, dependencies=[Depends(require_api_key)])
 def ask(body: AskIn) -> AskOut:
     """Un turno del agente.
 
-    auto_aprobar=True: si queda en HITL, la API aprueba el plan en la misma petición.
-    auto_aprobar=False: devuelve pendiente_hitl=True y el plan; se decide en /approve.
+    auto_aprobar=True (por defecto): si el grafo queda en HITL, la API aprueba
+    el plan en la misma petición. auto_aprobar=False: devuelve pendiente_hitl=True
+    y el plan; el cliente decide con POST /approve.
     """
     t0 = time.perf_counter()
     thread_id = body.thread_id.strip()
@@ -200,7 +212,7 @@ def approve(body: ApproveIn) -> AskOut:
     thread_id = body.thread_id.strip()
 
     def _decidir() -> dict:
-        # El plan_id no se expone: se lee del estado del hilo.
+        # El plan_id del PB2 no se expone: se lee del estado del hilo.
         actual = _agente.consultar_estado(thread_id)
         if not actual.get("pendiente_hitl") or not actual.get("plan_id"):
             raise ValueError("HITL_NOT_PENDING: no hay un plan pendiente de decisión")
@@ -226,7 +238,7 @@ def approve(body: ApproveIn) -> AskOut:
     dependencies=[Depends(require_api_key)],
 )
 def get_messages(thread_id: str) -> list[MessageOut]:
-    """Historial del hilo, leído de Postgres."""
+    """Historial del hilo leído de Postgres (no de la RAM del agente)."""
     t0 = time.perf_counter()
     filas = db.list_messages(thread_id)
     _log("GET", "/threads/{id}/messages", thread_id, t0, 200)
