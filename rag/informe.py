@@ -428,7 +428,6 @@ def _fuentes_md(fuentes: list[tuple[str, dict[str, int]]]) -> list[str]:
 
 
 def _redundancia_politica_md(scoring: dict[str, Any]) -> list[str]:
-    """Tabla de redundancia por pol\u00edtica de dedup (6.1); opcional: si no hay
     """Tabla de redundancia por política de dedup (6.1); opcional: si no hay
     datos volcados, no se muestra. El umbral se toma del volcado del scoring
     (``redundancia_umbral`` = DEDUP_UMBRAL), no hardcodeado."""
