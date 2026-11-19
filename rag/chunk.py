@@ -32,6 +32,10 @@ def trocear(
     size = chunk_size if chunk_size is not None else CHUNK_SIZE
     overlap = chunk_overlap if chunk_overlap is not None else CHUNK_OVERLAP
 
+    # Ajustar proporcionalmente: LangChain exige overlap <= chunk_size
+    if overlap > size and (chunk_overlap is None):
+        overlap = max(0, int(size * 0.15))  # ~15% del tamaño como fallback
+
     # Aceptar string plano (tests / eval) y envolver en Document
     if isinstance(documentos, str):
         documentos = [Document(page_content=documentos, metadata={"source": "inline"})]

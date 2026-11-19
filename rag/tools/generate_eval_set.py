@@ -94,58 +94,70 @@ def _pregunta_tipo(src: str, doc: str, nombre: str) -> tuple[str, bool]:
 def extract_questions_from_chunks(chunks: list, n: int = 50) -> list[dict]:
     """Extrae preguntas del eval set directamente de los chunkes indexados.
 
-    Recorre TODOS los chunkes y genera una pregunta por cada fuente única
-    (o por cada grupo de chunks con nombre diferente). Luego completa con
-    out-of-corpus hasta llegar a n.
+    Estrategia:
+      1. Recorre TODOS los chunkes y clasifica cada uno por tipo.
+      2. Para tipos genéricos (polideportivos, piscinas...), toma la PRIMERA
+         ocurrencia como pregunta representativa de esa fuente.
+      3. Para nombres específicos, crea una pregunta individual.
+      4. Completa con out-of-corpus hasta llegar a n.
     """
     questions = []
-    seen_questions = set()  # (pregunta, fuente) únicos
+
+    # Paso 1: clasificar todos los chunkes por tipo
+    generic_types = {}   # tipo -> primera ocurrencia (pregunta, fuente)
+    specific_names = set()  # (nombre, fuente) ya añadidos
+    all_sources = {}      # source -> primer chunk de esa fuente
 
     for c in chunks:
         src = c["source"] or "desconocido"
         doc = (c["content"] or "").strip()
         nombre = c.get("nombre") or ""
 
+        if src not in all_sources:
+            all_sources[src] = c
+
         q_texto, es_nombre = _pregunta_tipo(src, doc, nombre)
 
-        # Si es un nombre específico, la clave incluye el nombre completo
-        if es_nombre:
-            q_key = (q_texto.lower().strip(), src)
+        if es_nombre and nombre:
+            # Nombre específico: siempre único por (nombre, fuente)
+            key = f"{nombre}|{src}"
+            if key not in specific_names:
+                specific_names.add(key)
+                questions.append({
+                    "pregunta": q_texto,
+                    "fuente_esperada": src,
+                    "out_of_corpus": False,
+                })
         else:
-            # Para preguntas genéricas de tipo, usar solo la pregunta
-            q_key = (q_texto.lower().strip(), "")
+            # Tipo genérico: solo la primera ocurrencia por tipo de pregunta
+            if q_texto not in generic_types:
+                generic_types[q_texto] = src
+                questions.append({
+                    "pregunta": q_texto,
+                    "fuente_esperada": src,
+                    "out_of_corpus": False,
+                })
 
-        if q_key in seen_questions:
-            continue
-        seen_questions.add(q_key)
-
-        questions.append({
-            "pregunta": q_texto,
-            "fuente_esperada": src,
-            "out_of_corpus": False,
-        })
-
-    # Si aún no llegamos a n, añadir nombres específicos de todos los chunkes
+    # Paso 2: si aún no llegamos a n, añadir nombres específicos restantes
     if len(questions) < n:
         for c in chunks:
             if len(questions) >= n:
                 break
             src = c["source"] or "desconocido"
-            doc = (c["content"] or "").strip()
             nombre = c.get("nombre") or ""
 
             if nombre and len(nombre) > 3:
                 q_texto = f"Información general sobre {nombre}"
-                q_key = (q_texto.lower().strip(), src)
-                if q_key not in seen_questions:
-                    seen_questions.add(q_key)
+                key = f"{nombre}|{src}"
+                if key not in specific_names:
+                    specific_names.add(key)
                     questions.append({
                         "pregunta": q_texto,
                         "fuente_esperada": src,
                         "out_of_corpus": False,
                     })
 
-    # Agregar preguntas out-of-corpus (no tienen respuesta en los docs)
+    # Paso 3: agregar preguntas out-of-corpus
     remaining = n - len(questions)
     if remaining > 0:
         ooc_questions = [
@@ -232,10 +244,13 @@ def main(n=50, use_llm=False, out_path=None):
         questions = extract_questions_from_chunks(all_chunks, n)
         print(f"   {len(questions)} preguntas extraídas\n")
 
-    # 3. Contar in/out corpus
+    # 3. Contar in/out corpus y fuentes únicas
     in_corpus = sum(1 for q in questions if not q.get("out_of_corpus"))
     out_corpus = sum(1 for q in questions if q.get("out_of_corpus"))
-    print(f"   {in_corpus} in-corpus | {out_corpus} out-of-corpus\n")
+    fuentes_unicas = set(q.get("fuente_esperada", "") for q in questions if q.get("fuente_esperada"))
+
+    print(f"   {in_corpus} in-corpus | {out_corpus} out-of-corpus")
+    print(f"   Fuentes únicas: {len(fuentes_unicas)}\n")
 
     # 4. Guardar JSONL
     path = Path(out_path)
@@ -247,21 +262,13 @@ def main(n=50, use_llm=False, out_path=None):
 
     print(f"4. Guardado en {path}\n")
 
-    # 5. Resumen con fuentes únicas
-    fuentes_unicas = set(q.get("fuente_esperada", "") for q in questions if q.get("fuente_esperada"))
-    print("=== Resumen ===")
-    print(f"Total preguntas:   {len(questions)}")
-    print(f"In-corpus:         {in_corpus}")
-    print(f"Out-of-corpus:     {out_corpus}")
-    print(f"Fuentes únicas:    {len(fuentes_unicas)}\n")
-
-    # Mostrar muestra (primera de cada tipo)
+    # 5. Mostrar muestra (primera de cada tipo)
     print("=== Muestra de preguntas ===")
     shown_types = set()
     for i, q in enumerate(questions[:15], 1):
         ooc = " [out]" if q.get("out_of_corpus") else ""
         src = f" -> {q.get('fuente_esperada', '')}" if q.get("fuente_esperada") else ""
-        tipo = q["pregunta"][:30]
+        tipo = q["pregunta"][:35]
         new_type = tipo not in shown_types
         if new_type:
             shown_types.add(tipo)
