@@ -235,7 +235,7 @@ def _embed_ollama(textos: list[str], model: str | None = None,
         dim = dim_modelo
     for i, inicio in enumerate(range(0, len(textos), EMBED_BATCH_SIZE), start=1):
         batch = textos[inicio:inicio + EMBED_BATCH_SIZE]
-        payload: dict[str, Any] = {"model": model or EMBED_MODEL, "input": batch}
+
         payload: dict[str, Any] = {
             "model": modelo_efectivo,
             "input": batch,

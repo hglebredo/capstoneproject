@@ -1,4 +1,4 @@
-"""app.py — FastAPI del contrato PB3/MLOps.
+"""app.py - FastAPI del contrato PB3/MLOps.
 
 Rutas PB3: /health, /ask, /approve, /threads/{thread_id}/messages
 Seguridad: API key (401), rate limit (429), timeout (504).
@@ -27,7 +27,7 @@ from security import (ASK_TIMEOUT_SECONDS, API_KEY, check_timeout, log_request,
 #  Instancia FastAPI                                                           #
 # --------------------------------------------------------------------------- #
 
-app = FastAPI(title="RAG Agent — PB3/MLOps", version="1.0.0")
+app = FastAPI(title="RAG Agent - PB3/MLOps", version="1.0.0")
 
 # CORS abierto para el front Streamlit
 CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "*")
@@ -115,9 +115,15 @@ async def ask(req: AskIn, request: Request) -> dict:
         responder = _get_rag_responder()
         result = responder(req.pregunta, top_k=None)
         respuesta = result.get("respuesta", "") or ""
-        # Si el RAG devuelve abstencion y no hay evidencia, marcarlo
-        if resultado_abstenido := result.get("abstained"):
-            pendiente_hitl = False  # no requiere HITL, ya respondio
+
+        # Si el RAG devuelve abstención (no hay evidencia en los chunks),
+        # se marca pendiente_hitl solo si auto_aprobar=false.
+        if req.auto_aprobar:
+            pendiente_hitl = False  # cierra solo, no requiere HITL humano
+        else:
+            # Si el RAG abstuvo y no hay evidencia -> el plan queda pendiente
+            pendiente_hitl = result.get("abstained", False)
+
     except Exception as exc:
         error = str(exc)
 
@@ -132,6 +138,9 @@ async def ask(req: AskIn, request: Request) -> dict:
 
     duration_ms = int((time.time() - t0) * 1000)
     log_request("POST", "/ask", req.thread_id, duration_ms, status.HTTP_200_OK)
+
+    # done=True cuando no hay pendiente de HITL o se auto-aprobó.
+    done = not pendiente_hitl or req.auto_aprobar
 
     return AskOut(
         respuesta=respuesta,
@@ -182,7 +191,7 @@ async def get_thread_messages(thread_id: str) -> dict:
 
     return MessagesOut(
         thread_id=thread_id,
-        messages=[MessageOut(**m) for m in messages],
+        messages=[MessageOut.model_validate(m) for m in messages],
     )
 
 

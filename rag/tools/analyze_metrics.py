@@ -2,9 +2,11 @@ import json
 import math
 from pathlib import Path
 from statistics import median
+import os 
 
 # Load evaluation data
-EVAL = Path("tests/evaluation_questions.json")
+# EVAL = Path("tests/evaluation_questions.json")
+EVAL = Path(os.getenv('QUESTION_SET_RUTA'))
 preguntas = json.loads(EVAL.read_text(encoding="utf-8"))
 
 # Add project to path and import rag modules

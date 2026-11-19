@@ -218,4 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# PB2 / PB3
 output/
+storage/
+uploads/
+.tmp/
+
+
+

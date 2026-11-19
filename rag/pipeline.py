@@ -1,6 +1,6 @@
 """
 rag/pipeline.py
-Encadena PREFLIGHT → LOAD → CLEAN → TAG → CHUNK → EMBED → SCORING → DEDUP → INDEX.
+Encadena PREFLIGHT -> LOAD -> CLEAN -> TAG -> CHUNK -> EMBED -> SCORING -> DEDUP -> INDEX.
 PREFLIGHT garantiza que EMBED_MODEL esté disponible en EMBED_PROVIDER antes de empezar.
 Es el punto de entrada que importa tu aplicación [9].
 Al terminar genera un informe markdown
@@ -77,9 +77,9 @@ def _comprobar_dim(dim: int, embed_dim: int,
         (nivel, mensaje) donde nivel ∈ {"vacio", "ok", "info", "aviso"}:
         - "vacio": no hay embeddings (corpus vacío).
         - "ok":    dim == EMBED_DIM y no hay dim máxima declarada mayor.
-        - "info":  EMBED_DIM < dim máxima del modelo → el índice se crea con
+        - "info":  EMBED_DIM < dim máxima del modelo -> el índice se crea con
             EMBED_DIM (se informa de la dim máxima que maneja el modelo).
-        - "aviso": EMBED_DIM > dim generada → el índice se crea con la dim
+        - "aviso": EMBED_DIM > dim generada -> el índice se crea con la dim
             real (dim); se avisa de que EMBED_DIM no es el eje del índice.
     """
     if not dim:
@@ -223,7 +223,7 @@ def ejecutar_pipeline(
         _crono("TAG", t_tag)
         _log("TAG", f"{n_fuentes} fuentes etiquetadas")
 
-    # --- CHUNK → hereda doc_category, tags, relevancia_llm del documento padre [7]
+    # --- CHUNK -> hereda doc_category, tags, relevancia_llm del documento padre [7]
     _log("CHUNK", "inicio")
     t_chunk0 = time.perf_counter()
     chunks = trocear(documentos, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
@@ -434,7 +434,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Pipeline RAG completo: LOAD → CLEAN → TAG → CHUNK → EMBED → SCORING → DEDUP → INDEX"
+        description="Pipeline RAG completo: LOAD -> CLEAN -> TAG -> CHUNK -> EMBED -> SCORING -> DEDUP -> INDEX"
     )
     parser.add_argument("rutas", nargs="+", help="Archivos o carpetas del corpus (p. ej. data)")
     parser.add_argument("--chunk-size", type=int, default=None,

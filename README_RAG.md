@@ -1,4 +1,4 @@
-# RAG — Project Break 3 (MLOps)
+# RAG - Project Break 3 (MLOps)
 
 Este directorio contiene el sistema RAG completo, portable desde `agentes_deportesmad/` al proyecto `capstoneproject/`, alineado con las instrucciones del PB3/MLOps.
 
@@ -59,7 +59,7 @@ init_rag_db()
 # Crea tablas Conversation + Message en PostgreSQL o SQLite
 ```
 
-### 3. Consultar el RAG (online — pregunta → respuesta)
+### 3. Consultar el RAG (online - pregunta → respuesta)
 
 ```python
 from rag_utils import responder
@@ -69,7 +69,7 @@ print(resultado["respuesta"])
 # { "respuesta": "...", "chunks": [...], "fuentes": [...], ... }
 ```
 
-### 4. Indexar documentos (offline — ingestión del corpus)
+### 4. Indexar documentos (offline - ingestión del corpus)
 
 ```python
 from rag_utils import ejecutar_pipeline

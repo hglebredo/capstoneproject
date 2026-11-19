@@ -1,4 +1,4 @@
-"""schemas_mlops.py — modelos de entrada/salida del contrato PB3/MLOps.
+"""schemas_mlops.py - modelos de entrada/salida del contrato PB3/MLOps.
 
 Alineado con el spec: AskIn, AskOut, ApproveIn, MessageOut.
 Estos schemas reemplazan/complementan a los de api/schemas.py para las rutas

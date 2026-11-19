@@ -1,4 +1,4 @@
-"""security.py — API key, rate limit y timeout para el PB3/MLOps.
+"""security.py - API key, rate limit y timeout para el PB3/MLOps.
 
 - api_key: valida contra variable de entorno API_KEY. 401 si falta/incorrecta.
 - rate_limit: cuenta peticiones por IP en ventana de tiempo. 429 si supera RATE_LIMIT_PER_MINUTE.

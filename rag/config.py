@@ -15,15 +15,32 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    
+    # Cargar .env solo la primera vez (evitar que reload sobrescriba vars)
+    if not hasattr(load_dotenv, "_loaded"):
+        load_dotenv()
+        load_dotenv._loaded = True  # type: ignore[attr-defined]
 except ImportError:
     pass
 
+
+def _int(env_key: str, default: int = 1) -> int:
+    """Lee una variable de entorno como entero, tratando '' como None."""
+    raw = os.getenv(env_key) or ""
+    return int(raw.strip()) if raw.strip() else default
+
+
+def _float(env_key: str, default: float = 0.0) -> float:
+    """Lee una variable de entorno como float, tratando '' como None."""
+    raw = os.getenv(env_key) or ""
+    return float(raw.strip()) if raw.strip() else default
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-MAX_ITER = int(os.getenv("MAX_ITER", "8"))
-MAX_STEPS = int(os.getenv("MAX_STEPS", "5"))
-MAX_TURNS = int(os.getenv("MAX_TURNS", "20"))
+MAX_ITER = _int("MAX_ITER", 8)
+MAX_STEPS = _int("MAX_STEPS", 5)
+MAX_TURNS = _int("MAX_TURNS", 20)
 
 RAG_INDEX_DIR = Path(os.getenv("RAG_INDEX_DIR", BASE_DIR / "data" / "index"))
 ASSETS_DIR = Path(os.getenv("ASSETS_DIR", BASE_DIR / "assets"))
@@ -119,8 +136,8 @@ HF_TOKEN: str | None = os.getenv("HF_TOKEN") or None
 GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY") or None
 
 # --- Chunking ---
-CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1000"))
-CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "150"))
+CHUNK_SIZE: int = _int("CHUNK_SIZE", 1000)
+CHUNK_OVERLAP: int = _int("CHUNK_OVERLAP", 150)
 
 # --- Checkpoint de embeddings ---
 EMBED_CHECKPOINT_FILE: str = os.getenv(
@@ -132,16 +149,16 @@ EMBED_CHECKPOINT_ENABLED: bool = os.getenv(
     "EMBED_CHECKPOINT_ENABLED", "true"
 ).lower() == "true"
 
-EMBED_MAX_ATTEMPTS: int = int(os.getenv("EMBED_MAX_ATTEMPTS", "8"))
-EMBED_RETRY_BASE_DELAY: float = float(os.getenv("EMBED_RETRY_BASE_DELAY", "5"))
+EMBED_MAX_ATTEMPTS: int = _int("EMBED_MAX_ATTEMPTS", 8)
+EMBED_RETRY_BASE_DELAY: float = _float("EMBED_RETRY_BASE_DELAY", 5.0)
 
 # --- Retrieval ---
-TOP_K: int = int(os.getenv("TOP_K", "5"))
-MAX_CHUNKS: int = int(os.getenv("MAX_CHUNKS", "5"))
+TOP_K: int = _int("TOP_K", 5)
+MAX_CHUNKS: int = _int("MAX_CHUNKS", 5)
 
 # --- Generación ---
-GEN_TEMPERATURE: float = float(os.getenv("GEN_TEMPERATURE", "0.1"))
-GEN_MAX_TOKENS: int = int(os.getenv("GEN_MAX_TOKENS", "1024"))
+GEN_TEMPERATURE: float = _float("GEN_TEMPERATURE", 0.1)
+GEN_MAX_TOKENS: int = _int("GEN_MAX_TOKENS", 1024)
 
 ABSTENTION_MESSAGE: str = os.getenv(
     "ABSTENTION_MESSAGE",
@@ -149,9 +166,9 @@ ABSTENTION_MESSAGE: str = os.getenv(
 )
 
 # --- Embeddings ---
-EMBED_DIM: int = int(os.getenv("EMBED_DIM", "384"))
-EMBED_BATCH_SIZE: int = int(os.getenv("EMBED_BATCH_SIZE", "30"))
-EMBED_TIMEOUT: int = int(os.getenv("EMBED_TIMEOUT", "600"))
+EMBED_DIM: int = _int("EMBED_DIM", 384)
+EMBED_BATCH_SIZE: int = _int("EMBED_BATCH_SIZE", 30)
+EMBED_TIMEOUT: int = _int("EMBED_TIMEOUT", 600)
 EXPORT_EMBEDDINGS: bool = os.getenv(
     "EXPORT_EMBEDDINGS", "true"
 ).lower() == "true"
@@ -178,9 +195,9 @@ TAG_SCORING_DEDUP: bool = os.getenv(
     "TAG_SCORING_DEDUP", "true"
 ).lower() == "true"
 
-TAG_MAX_TOKENS: int = int(os.getenv("TAG_MAX_TOKENS", "1024"))
+TAG_MAX_TOKENS: int = _int("TAG_MAX_TOKENS", 1024)
 
-DEDUP_UMBRAL: float = float(os.getenv("DEDUP_UMBRAL", "0.93"))
+DEDUP_UMBRAL: float = _float("DEDUP_UMBRAL", 0.93)
 DEDUP_AUDIT: bool = os.getenv("DEDUP_AUDIT", "true").lower() == "true"
 DEDUP_AUDIT_RUTA: str = os.getenv(
     "DEDUP_AUDIT_RUTA", "output/dedup_audit.jsonl"
@@ -188,11 +205,11 @@ DEDUP_AUDIT_RUTA: str = os.getenv(
 
 # --- Set de preguntas ---
 QUESTION_SET: str = os.getenv("QUESTION_SET", "")
-MAX_QUESTIONS: int = int(os.getenv("MAX_QUESTIONS", "1"))
+MAX_QUESTIONS: int = _int("MAX_QUESTIONS", 1)
 QUESTION_SET_RUTA: str = os.getenv(
     "QUESTION_SET_RUTA", "output/question_set.json"
 )
-GEN_TIMEOUT: int = int(os.getenv("GEN_TIMEOUT", "140"))
+GEN_TIMEOUT: int = _int("GEN_TIMEOUT", 140)
 
 # --- ChromaDB ---
 CHROMA_DIR: str = os.getenv("CHROMA_DIR", "./output/chroma_db")
@@ -218,6 +235,4 @@ IMAGE_OCR_LANG: str = os.getenv("IMAGE_OCR_LANG", "spa+eng")
 # Modelo de visión independiente. Si no se declara, hereda GEN_MODEL.
 IMAGE_VISION_MODEL: str = os.getenv("IMAGE_VISION_MODEL") or GEN_MODEL
 
-IMAGE_MAX_DESCRIPTION_CHARS: int = int(
-    os.getenv("IMAGE_MAX_DESCRIPTION_CHARS", "1200")
-)
+IMAGE_MAX_DESCRIPTION_CHARS: int = _int("IMAGE_MAX_DESCRIPTION_CHARS", 1200)
