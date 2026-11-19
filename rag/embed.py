@@ -135,6 +135,7 @@ def _reintentar_red(fn, *args, **kwargs):
             requests.ConnectionError,
             requests.Timeout,
             requests.ChunkedEncodingError,
+            requests.exceptions.ChunkedEncodingError,
         ) as e:
             ultimo_error = e
         except requests.HTTPError as e:
@@ -236,6 +237,7 @@ def _embed_ollama(textos: list[str], model: str | None = None,
     for i, inicio in enumerate(range(0, len(textos), EMBED_BATCH_SIZE), start=1):
         batch = textos[inicio:inicio + EMBED_BATCH_SIZE]
 
+        payload: dict[str, Any] = {"model": model or EMBED_MODEL, "input": batch}
         payload: dict[str, Any] = {
             "model": modelo_efectivo,
             "input": batch,
@@ -316,6 +318,7 @@ def _reintentar_cuota(url: str, headers: dict, body: dict) -> requests.Response:
             requests.ConnectionError,
             requests.Timeout,
             requests.ChunkedEncodingError,
+            requests.exceptions.ChunkedEncodingError,
         ) as e:
             ultimo_error = e
             delay = min(5.0 * (2 ** intento), 120.0)
@@ -628,6 +631,10 @@ def verificar_modelo_disponible(metadatos: dict[str, str] | None = None) -> Pref
                 EMBED_DIM_MAX_*. None = el proveedor no la expone.
             "verificado_por": str -  "online" | "cache_env".
             "aviso": str | None -  comprobación degradada (red cortada / sin
+            "dim_modelo": int | None — dimensión máxima declarada vía
+                EMBED_DIM_MAX_*. None = el proveedor no la expone.
+            "verificado_por": str — "online" | "cache_env".
+            "aviso": str | None — comprobación degradada (red cortada / sin
                 API key): se asume disponible vía caché de `.env`.
 
     Raises:

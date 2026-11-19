@@ -11,6 +11,7 @@ semántica: similitud coseno umbral + `semantic_score` del scoring.
   puntuación semántica en la comparación de chunks (requiere scoring previo).
 --- INFORMACIÓN DE CONFIGURACIÓN ---
         -> Umbral configurable en archivo .env: DEDUP_UMBRAL
+        → Umbral configurable en archivo .env: DEDUP_UMBRAL
 
 Implementación incremental con FAISS (IndexFlatIP): cada candidato se busca
 contra el índice plano que va creciendo con los chunks ya conservados.

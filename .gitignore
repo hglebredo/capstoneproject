@@ -223,7 +223,10 @@ __marimo__/
 output/
 storage/
 uploads/
+<<<<<<< HEAD
 .tmp/
 
 
 
+=======
+>>>>>>> 2d6bc826b41b6030760aff5d9a226bf231b3aaee

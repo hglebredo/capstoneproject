@@ -1,6 +1,7 @@
 """
 rag/pipeline.py
 Encadena PREFLIGHT -> LOAD -> CLEAN -> TAG -> CHUNK -> EMBED -> SCORING -> DEDUP -> INDEX.
+Encadena PREFLIGHT → LOAD → CLEAN → TAG → CHUNK → EMBED → SCORING → DEDUP → INDEX.
 PREFLIGHT garantiza que EMBED_MODEL esté disponible en EMBED_PROVIDER antes de empezar.
 Es el punto de entrada que importa tu aplicación [9].
 Al terminar genera un informe markdown
@@ -53,6 +54,9 @@ from .load import cargar_archivos
 from .tsd.dedup import deduplicar
 from .tsd.scoring import puntuar
 from .tsd.tag import etiquetar
+from .file_hash import verificar_archivos_al_final
+from .load import cargar_archivos
+
 
 def _log(fase: str, msg: str) -> None:
     """Marca de tiempo + fase: formato único en consola (evita repetir strftime)."""
@@ -80,6 +84,9 @@ def _comprobar_dim(dim: int, embed_dim: int,
         - "info":  EMBED_DIM < dim máxima del modelo -> el índice se crea con
             EMBED_DIM (se informa de la dim máxima que maneja el modelo).
         - "aviso": EMBED_DIM > dim generada -> el índice se crea con la dim
+        - "info":  EMBED_DIM < dim máxima del modelo → el índice se crea con
+            EMBED_DIM (se informa de la dim máxima que maneja el modelo).
+        - "aviso": EMBED_DIM > dim generada → el índice se crea con la dim
             real (dim); se avisa de que EMBED_DIM no es el eje del índice.
     """
     if not dim:
@@ -88,6 +95,7 @@ def _comprobar_dim(dim: int, embed_dim: int,
         return "aviso", (
             f"EMBED_DIM ({embed_dim}) es mayor que la dim generada ({dim}): "
             f"el índice se crea con {dim} dims -  la dim del índice son las "
+            f"el índice se crea con {dim} dims — la dim del índice son las "
             f"{dim} dimensiones que genera el modelo"
         )
     if dim_max_modelo is not None and dim_max_modelo > dim:
@@ -200,6 +208,12 @@ def ejecutar_pipeline(
     t_load0 = time.perf_counter()
     _log("LOAD", "inicio")
     documentos = cargar_archivos(rutas)
+    auditoria_archivos: list[dict] = []
+    documentos = cargar_archivos(
+        rutas,
+        auditoria_archivos=auditoria_archivos,
+    )
+
     n_cargados = len(documentos)
     _log("LOAD", f"{n_cargados} documentos cargados")
     _crono("LOAD", t_load0)
@@ -224,6 +238,7 @@ def ejecutar_pipeline(
         _log("TAG", f"{n_fuentes} fuentes etiquetadas")
 
     # --- CHUNK -> hereda doc_category, tags, relevancia_llm del documento padre [7]
+    # --- CHUNK → hereda doc_category, tags, relevancia_llm del documento padre [7]
     _log("CHUNK", "inicio")
     t_chunk0 = time.perf_counter()
     chunks = trocear(documentos, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
@@ -418,6 +433,9 @@ def ejecutar_pipeline(
             "vectores_totales": totales,
             "recreado": recreate_index,
         },
+        "integridad_archivos": verificar_archivos_al_final(
+            auditoria_archivos
+        ),
         "tiempo_total_s": tiempo_total,
     }
 

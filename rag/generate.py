@@ -28,6 +28,14 @@ from .config import (
 )
 
 import requests
+# Temperatura: si config.py no la define todavía, usamos 0.2 (apegado al contexto)
+try:
+    from .config import GEN_TEMPERATURE
+except ImportError:
+    GEN_TEMPERATURE = 0.1
+
+import requests
+
 import time
 
 def _generar_google(prompt: str, max_intentos: int = 3) -> str:

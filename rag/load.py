@@ -27,6 +27,7 @@ from .pdf_tabular import (
     _extraer_texto_tabla_a_textos,
     _parsear_a_key_value_simple,
     cargar_pdfs_especiales,
+    extraer_piscinas,
 )
 
 _LOTES_HASH = 1 << 20  # 1 MiB por lectura en el hash
@@ -48,6 +49,11 @@ def _hash_file(ruta: str) -> str:
 
     return digest.hexdigest()
 
+from .file_hash import sha256_archivo
+
+
+def _hash_file(ruta: str) -> str:
+    return sha256_archivo(ruta)
 
 def _normalizar_source(
     documentos: list[Document],
@@ -114,6 +120,50 @@ def _resultados_especiales(directorio: Path) -> dict[str, list[dict]]:
 
     return _RESULTADOS_ESPECIALES[clave]
 
+def _load_piscinas_tabular(path: str) -> list[Document]:
+    """Carga cada instalación como un documento columna: valor."""
+    registros = extraer_piscinas(path)
+    base = os.path.basename(path)
+    documentos: list[Document] = []
+
+    for row_index, registro in enumerate(registros):
+        valores = registro["valores"]
+
+        contenido = (
+            "Piscinas municipales al aire libre — Verano 2026\n\n"
+            + "\n".join(
+                f"{columna}: {valor}"
+                for columna, valor in valores.items()
+            )
+        )
+
+        documentos.append(
+            Document(
+                page_content=contenido,
+                metadata={
+                    "source": base,
+                    "pdf_source": base,
+                    "derived_from": "tabular_geometry",
+                    "file_type": "pdf_tabular_key_value",
+                    "content_type": "table_row",
+                    "dedup_policy": "exact_only",
+                    "page": registro["pagina"],
+                    "table": registro["tabla"],
+                    "row": row_index,
+                    "extracted_row": registro["fila_extraida"],
+                    "headers": list(valores),
+                },
+            )
+        )
+
+    documentos = _normalizar_source(documentos, path)
+
+    print(
+        f"[PDF TAB] {base}: "
+        f"{len(documentos)} filas completas | dedup=exact_only"
+    )
+
+    return documentos
 
 def _load_pdf(
     path: str,
@@ -129,6 +179,14 @@ def _load_pdf(
     - Resto: extracción nativa con PyPDFLoader.
     """
     base = os.path.basename(path)
+
+    """Carga un PDF con perfiles específicos, TAB, OCR o extracción nativa."""
+    base = os.path.basename(path)
+
+    # Perfil específico: no pasar por Markdown ni por extracción genérica.
+    # Los errores se propagan para evitar indexar una extracción incorrecta.
+    if base == "PiscinasAireLibre2026.pdf":
+        return _load_piscinas_tabular(path)
 
     if base in pdfs_tabulares:
         try:
@@ -301,6 +359,17 @@ def _documentos_desde_texto(
             )
         )
 
+    if not documentos and texto.strip():
+        # OCR y PDFs TAB sin tablas Markdown también contienen evidencia.
+        # Conservar el bloque completo evita perder contexto entre líneas.
+        documentos.append(Document(
+            page_content=texto.strip(),
+            metadata={
+                "source": base, "pdf_source": base,
+                "derived_from": derived_from, "file_type": file_type,
+                "block_index": numero_bloque,
+            },
+        ))
     return documentos
 
 
@@ -456,7 +525,10 @@ _LOADERS: dict[str, Loader] = {
 }
 
 
-def cargar_archivos(rutas: list[str] | str) -> list[Document]:
+def cargar_archivos(
+    rutas: list[str] | str,
+    auditoria_archivos: list[dict] | None = None,
+) -> list[Document]:
     """
     Punto de entrada público.
 
@@ -528,6 +600,16 @@ def cargar_archivos(rutas: list[str] | str) -> list[Document]:
 
         file_hash = _hash_file(archivo)
 
+        if auditoria_archivos is not None:
+            auditoria_archivos.append(
+                {
+                    "ruta": str(Path(archivo).resolve()),
+                    "source": Path(archivo).name,
+                    "sha256_carga": file_hash,
+                    "documentos_cargados": len(docs),
+                }
+            )
+
         for indice, documento in enumerate(docs):
             documento.metadata["doc_id"] = indice
             documento.metadata.setdefault(
@@ -542,4 +624,5 @@ def cargar_archivos(rutas: list[str] | str) -> list[Document]:
 
         documentos.extend(docs)
 
+    return documentos
     return documentos

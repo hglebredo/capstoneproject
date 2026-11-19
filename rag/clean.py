@@ -18,6 +18,9 @@ def _normalizar_page_content(texto: str) -> str:
       1. Saltos de línea dobles o más -> uno solo.
       2. Espacios de más (tabs, 3+ espacios) -> uno.
       3. Líneas vacías repetidas -> eliminar.
+      1. Saltos de línea dobles o más → uno solo.
+      2. Espacios de más (tabs, 3+ espacios) → uno.
+      3. Líneas vacías repetidas → eliminar.
       4. Espacios al inicio/final de cada línea.
       5. BOM / caracteres de control invisibles.
     """

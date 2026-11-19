@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # RAG — Project Break 3 (MLOps)
 
 Pipeline RAG completo para el corpus de Deporte Municipal del Ayuntamiento de Madrid.  
@@ -147,3 +148,13 @@ Ver [`docs/environment.md`](../docs/environment.md) para la referencia completa.
 - **RRF (Reciprocal Rank Fusion)**: La recuperación híbrida fusiona ranking vectorial y BM25 con K=60. Un chunk presente en ambos rankings acumula score.
 - **Dedup por política**: Los chunks de CSVs con `exact_key` nunca se deduplican por coseno. Los `group_only` se agrupan por dimensiones. El resto pasa por dedup semántico.
 - **FAISS para scoring y dedup**: Memoria O(n·d) en vez de O(n²). ~1,3 GB vs ~68 GB a escala real.
+=======
+# Incorporación del RAG
+
+Aquí irá el RAG PB1 del equipo, sin contenido añadido en este cascarón.
+El conector previsto está en agentes/tools/rag.py. No existe aún implementación.
+
+Al mover el RAG, revisar imports (config/src → rag.config/rag.src o relativos),
+rutas del corpus y Chroma y dependencias. Contrato previsto:
+`responder(pregunta, top_k=None) -> dict`.
+>>>>>>> 2d6bc826b41b6030760aff5d9a226bf231b3aaee
