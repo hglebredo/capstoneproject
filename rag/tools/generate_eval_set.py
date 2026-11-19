@@ -220,7 +220,7 @@ def main(n=50, use_llm=False, out_path=None):
     """Genera el eval set y lo guarda."""
 
     if not out_path:
-        out_path = os.getenv("EVAL_SET_RUTA", "queries/eval_set.jsonl")
+        out_path = os.getenv("EVAL_SET_RUTA", "output/eval_set.jsonl")
 
     print(f"=== Generando eval_set.jsonl ({n} preguntas) ===\n")
 
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Genera queries/eval_set.jsonl a partir de los chunkes indexados."
+        description="Genera output/eval_set.jsonl a partir de los chunkes indexados."
     )
     parser.add_argument("--n", type=int, default=50, help="Número de preguntas (default: 50)")
     parser.add_argument("--llm", action="store_true", help="Usar LLM para generar preguntas")
