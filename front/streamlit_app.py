@@ -59,6 +59,16 @@ def llamar_api(metodo: str, ruta: str, body: dict | None = None, timeout: int = 
     except ValueError:
         return r.status_code, r.text
 
+
+def decidir(thread_id: str, aprobado: bool) -> None:
+    """POST /approve: aprueba o rechaza el plan pendiente del hilo."""
+    with st.spinner("Aplicando tu decisión…"):
+        status, datos = llamar_api(
+            "POST", "/approve", {"thread_id": thread_id, "aprobado": aprobado}
+        )
+    st.session_state.ultima_respuesta = (status, datos)
+    st.rerun()
+
 # --- Barra lateral ---
 with st.sidebar:
     st.header("Conexión")
@@ -81,6 +91,7 @@ with st.sidebar:
     st.code(st.session_state.thread_id)
     if st.button("Nueva conversación", use_container_width=True):
         st.session_state.thread_id = f"front-{uuid.uuid4().hex[:8]}"
+        st.session_state.pop("ultima_respuesta", None)
         st.rerun()
 
 
@@ -98,8 +109,33 @@ if status == 200:
 else:
     st.error(f"No se pudo leer el historial ({status}): {mensajes}")
 
-# 2) Nueva pregunta → POST /ask
-pregunta = st.chat_input("Pregunta sobre instalaciones, piscinas, precios…")
+# 2) Estado del último turno (guardado antes del st.rerun())
+status, datos = st.session_state.get("ultima_respuesta", (None, None))
+pendiente = status == 200 and bool(datos.get("pendiente_hitl"))
+
+# 3) Plan pendiente → pregunta + respuesta + botones (aún no están en Postgres)
+if pendiente:
+    with st.chat_message("user"):
+        st.markdown(st.session_state.get("ultima_pregunta", ""))
+    with st.chat_message("assistant"):
+        st.markdown(datos["respuesta"])
+        st.markdown("**Plan propuesto:**")
+        for paso in datos["plan"]:
+            st.markdown(f"- {paso}")
+        col1, col2 = st.columns(2)
+        if col1.button("✅ Aprobar", use_container_width=True):
+            decidir(thread_id, True)
+        if col2.button("❌ Rechazar", use_container_width=True):
+            decidir(thread_id, False)
+elif status is not None and status != 200:
+    st.error(f"Error {status}: {datos}")
+
+# 4) Nueva pregunta → POST /ask (desactivada si hay un plan sin decidir)
+pregunta = st.chat_input(
+    "Aprueba o rechaza el plan antes de seguir" if pendiente
+    else "Pregunta sobre instalaciones, piscinas, precios…",
+    disabled=pendiente,
+)
 if pregunta:
     with st.chat_message("user"):
         st.markdown(pregunta)
@@ -108,9 +144,6 @@ if pregunta:
             "POST", "/ask",
             {"pregunta": pregunta, "thread_id": thread_id, "auto_aprobar": False},
         )
+    st.session_state.ultima_pregunta = pregunta
     st.session_state.ultima_respuesta = (status, datos)
     st.rerun()
-
-# 3) Resultado del último /ask (provisional: en el paso 6 lo convertimos en el HITL)
-if "ultima_respuesta" in st.session_state:
-    st.write(st.session_state.ultima_respuesta)
