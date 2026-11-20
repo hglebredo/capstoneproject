@@ -60,7 +60,7 @@ HF_EMBED_MODEL: str = os.getenv(
 )
 GOOGLE_EMBED_MODEL: str = os.getenv(
     "GOOGLE_EMBED_MODEL",
-    "gemini-embedding-2",
+    "gemini-embedding-v2",
 )
 
 # --- Interruptor 2: generación ---

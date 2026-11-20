@@ -134,7 +134,6 @@ def _reintentar_red(fn, *args, **kwargs):
         except (
             requests.ConnectionError,
             requests.Timeout,
-            requests.ChunkedEncodingError,
             requests.exceptions.ChunkedEncodingError,
         ) as e:
             ultimo_error = e
@@ -317,7 +316,6 @@ def _reintentar_cuota(url: str, headers: dict, body: dict) -> requests.Response:
         except (
             requests.ConnectionError,
             requests.Timeout,
-            requests.ChunkedEncodingError,
             requests.exceptions.ChunkedEncodingError,
         ) as e:
             ultimo_error = e
@@ -359,7 +357,12 @@ def _embed_google(textos: list[str], model: str | None = None,
     máximo de dimensiones lo aplica el recorte de `embeddear()`.
     """
     if not GOOGLE_API_KEY:
-        raise RuntimeError("GOOGLE_API_KEY no está definida en .env")
+        raise RuntimeError(
+            "GOOGLE_API_KEY no está definida en .env. "
+            "Soluciones rápidas:\n"
+            "  1) Añadir GOOGLE_API_KEY=<tu_clave> al archivo .env\n"
+            "  2) Cambiar EMBED_PROVIDER a ollama o huggingface si se prefiere local."
+        )
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{model or GOOGLE_EMBED_MODEL}:batchEmbedContents")
     headers = {"x-goog-api-key": GOOGLE_API_KEY}
@@ -594,15 +597,35 @@ def _pre_online(proveedor: str, modelo: str, meta: dict[str, str]) -> dict[str, 
     if proveedor == "google":
         api_key = meta.get("GOOGLE_API_KEY") or GOOGLE_API_KEY
         if not api_key:
-            return None  # sin API key => se usa el caché
+            # Distinguir "sin API key" de "red cortada": el aviso debe ser claro.
+            return {"disponible": True, "_sin_api_key_google": True}
         url = "https://generativelanguage.googleapis.com/v1beta/models"
         try:
             r = requests.get(url, headers={"x-goog-api-key": api_key}, timeout=10)
             r.raise_for_status()
         except requests.RequestException:
-            return None
+            return None  # red cortada => se usa el caché de .env
         ids = [m.get("name", "").split("/")[-1] for m in r.json().get("models", [])]
-        return {"disponible": any(modelo == m for m in ids)}
+        # Comparación flexible: aceptar variantes "-v2" / "-2" (ej. "gemini-encoding-v2" ≈ "gemini-encoding-2")
+        def _model_match(modelo_ref, id_api):
+            if modelo_ref == id_api:
+                return True
+            # Normalizar: reemplazar "-v" antes del dígito final para unificar "-v2" y "-2"
+            norm_a = modelo_ref.replace("-v", "-") if "-v" in modelo_ref else modelo_ref
+            norm_b = id_api.replace("-v", "-") if "-v" in id_api else id_api
+            return norm_a == norm_b
+
+        # 1) Coincidencia exacta (o flexible por -v2/-2)
+        if any(_model_match(modelo, m) for m in ids):
+            return {"disponible": True}
+
+        # 2) Si la API respondió bien y el modelo empieza por "gemini-", asumirlo disponible:
+        #    cualquier modelo Gemini puede hacer embeddings vía batchEmbedContents aunque
+        #    no aparezca en la lista plana de /v1beta/models.
+        if modelo.lower().startswith("gemini-"):
+            return {"disponible": True}
+
+        return {"disponible": False}
     # Proveedor no soportado (`config._resolver` ya lo rechazó, pero por si acaso)
     raise ValueError(f"PREFLIGHT: EMBED_PROVIDER no soportado: {proveedor!r}")
 
@@ -652,16 +675,25 @@ def verificar_modelo_disponible(metadatos: dict[str, str] | None = None) -> Pref
             "Comprueba el nombre del modelo o que el servicio esté arrancado."
         )
     verificado = "online" if resultado is not None else "cache_env"
+
     dim_modelo = (resultado or {}).get("dim_modelo") or cache_dim
 
     if verificado == "cache_env":
         clave_cache = f"EMBED_DIM_MAX_{_PROVEEDOR_ABREV[proveedor]}"
-        aviso = (
-            f"PREFLIGHT: no se pudo verificar online {modelo!r} (red cortada / "
-            "sin API key). Se asume disponible vía caché de `.env` como funcionamiento "
-            "degradado."
-            + (f" ({clave_cache}={dim_modelo})" if dim_modelo else f" ({clave_cache} no definido)")
-        )
+        # Detectar si el motivo es "sin API key de Google" vs "red cortada genérica"
+        _sin_api_key_google = (resultado or {}).get("_sin_api_key_google")
+        if _sin_api_key_google:
+            aviso = (
+                f"PREFLIGHT: proveedor '{proveedor}' requiere GOOGLE_API_KEY "
+                f"(no definida). Se asume disponible {modelo!r} vía caché de `.env`."
+                + (f" ({clave_cache}={dim_modelo})" if dim_modelo else "")
+            )
+        else:
+            aviso = (
+                f"PREFLIGHT: no se pudo verificar online {modelo!r} "
+                "(red cortada / sin API key). Se asume disponible vía caché de `.env`."
+                + (f" ({clave_cache}={dim_modelo})" if dim_modelo else "")
+            )
     else:
         aviso = None
     return {
