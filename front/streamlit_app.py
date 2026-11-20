@@ -39,7 +39,25 @@ def comprobar_health() -> dict | None:
         return r.json()
     except requests.RequestException:
         return None
-
+    
+def llamar_api(metodo: str, ruta: str, body: dict | None = None, timeout: int = 300):
+    """Llama a una ruta protegida. Devuelve (status, datos) o (None, mensaje de error)."""
+    try:
+        r = requests.request(
+            metodo,
+            f"{base_url}{ruta}",
+            params={"api_key": api_key},
+            json=body,
+            timeout=timeout,
+        )
+    except requests.Timeout:
+        return None, f"El front dejó de esperar a los {timeout} s."
+    except requests.RequestException:
+        return None, "No se pudo conectar con la API."
+    try:
+        return r.status_code, r.json()
+    except ValueError:
+        return r.status_code, r.text
 
 # --- Barra lateral ---
 with st.sidebar:
