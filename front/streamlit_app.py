@@ -17,21 +17,20 @@ from dotenv import load_dotenv
 # Carga solo front/.env (no el .env de la API, que está en la raíz)
 load_dotenv(Path(__file__).parent / ".env")
 
-# Misma clave que API_KEY del servidor; viaja en ?api_key=
+# Misma clave que API_KEY del servidor.
 api_key = (os.getenv("API_KEY") or "").strip()
 # Dónde está la API (local o Render), sin barra final
 base_url = (os.getenv("API_BASE_URL") or "http://127.0.0.1:8000").rstrip("/")
 
 st.set_page_config(page_title="Deporte Municipal Madrid", page_icon="🏟️", layout="wide")
 
-
-# --- Estado de la sesión ----------------------------------------------------
+# --- Estado de la sesión ---
 # Streamlit re-ejecuta el archivo en cada clic: lo que deba persistir va en session_state.
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = f"front-{uuid.uuid4().hex[:8]}"
 
 
-# --- Llamadas a la API ------------------------------------------------------
+# --- Llamadas a la API ---
 def comprobar_health() -> dict | None:
     """GET /health (público, sin clave). None si la API no responde."""
     try:
@@ -42,7 +41,7 @@ def comprobar_health() -> dict | None:
         return None
 
 
-# --- Barra lateral ------------------------------------------------------------
+# --- Barra lateral ---
 with st.sidebar:
     st.header("Conexión")
     if api_key:
@@ -65,3 +64,35 @@ with st.sidebar:
     if st.button("Nueva conversación", use_container_width=True):
         st.session_state.thread_id = f"front-{uuid.uuid4().hex[:8]}"
         st.rerun()
+
+
+# --- Zona principal -----------------------------------------------------------
+st.title("🏟️ Asistente Deporte Municipal Madrid")
+
+thread_id = st.session_state.thread_id
+
+# 1)Historial leído de la API (GET /threads/{id}/messages)
+status, mensajes = llamar_api("GET", f"/threads/{thread_id}/messages", timeout=30)
+if status == 200:
+    for m in mensajes:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+else:
+    st.error(f"No se pudo leer el historial ({status}): {mensajes}")
+
+# 2) Nueva pregunta → POST /ask
+pregunta = st.chat_input("Pregunta sobre instalaciones, piscinas, precios…")
+if pregunta:
+    with st.chat_message("user"):
+        st.markdown(pregunta)
+    with st.spinner("El agente está pensando…"):
+        status, datos = llamar_api(
+            "POST", "/ask",
+            {"pregunta": pregunta, "thread_id": thread_id, "auto_aprobar": False},
+        )
+    st.session_state.ultima_respuesta = (status, datos)
+    st.rerun()
+
+# 3) Resultado del último /ask (provisional: en el paso 6 lo convertimos en el HITL)
+if "ultima_respuesta" in st.session_state:
+    st.write(st.session_state.ultima_respuesta)
