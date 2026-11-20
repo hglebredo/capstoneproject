@@ -40,4 +40,4 @@ pydantic>=2.0.0
 
 # PostgreSQL + SQLModel (PB3 — persistencia)
 sqlmodel>=0.0.14
-psycopg2-binary>=2.9.9
+psycopg[binary]>=3.2.0
