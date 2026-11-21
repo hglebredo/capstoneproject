@@ -3,7 +3,7 @@ rag/chunk.py
 Divide documentos en fragmentos pequeños y homogéneos.
 
 Estrategia: "Level 2 – Recursive Character" del tutorial "Five levels of
-text splitting": se corta primero en límites semánticos (párrafo → frase)
+text splitting": se corta primero en límites semánticos (párrafo -> frase)
 y solo después en espacios/caracteres. Es el punto de partida recomendado
 ("swiss army knife"); se valida con eval de retrieval
 (scripts/eval_coherencia_chunks.py).
@@ -32,6 +32,10 @@ def trocear(
     size = chunk_size if chunk_size is not None else CHUNK_SIZE
     overlap = chunk_overlap if chunk_overlap is not None else CHUNK_OVERLAP
 
+    # Ajustar proporcionalmente: LangChain exige overlap <= chunk_size
+    if overlap > size and (chunk_overlap is None):
+        overlap = max(0, int(size * 0.15))  # ~15% del tamaño como fallback
+
     # Aceptar string plano (tests / eval) y envolver en Document
     if isinstance(documentos, str):
         documentos = [Document(page_content=documentos, metadata={"source": "inline"})]
@@ -40,7 +44,7 @@ def trocear(
         chunk_size=size,
         chunk_overlap=overlap,
         length_function=len,
-        # Orden de separadores: párrafo → frase → espacio → letra [3]
+        # Orden de separadores: párrafo -> frase -> espacio -> letra [3]
         separators=["\n\n", "\n", ". ", " ", ""],
     )
 
@@ -61,7 +65,7 @@ def trocear(
         else:
             doc_chunks = splitter.split_documents([doc])
             for i, chunk in enumerate(doc_chunks):
-                # Puente TAG→CHUNK: hereda la metadata del documento padre
+                # Puente TAG->CHUNK: hereda la metadata del documento padre
                 # (doc_category, tags, relevancia_llm) + chunk_index secuencial
                 # por documento [17]. chunking_hint del advisor también viaja.
                 chunk.metadata = {**doc.metadata, "chunk_index": i, "chunk_size": size}

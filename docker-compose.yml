@@ -1,0 +1,77 @@
+# ===================================================================
+# docker-compose - PB3/MLOps (FastAPI + RAG)
+# Servicios: app, postgres, ollama
+#
+# Levantar todo:
+#   docker compose up --build -d
+#
+# Logs en tiempo real:
+#   docker compose logs -f app
+# ===================================================================
+
+services:
+  # --- PostgreSQL con pgvector ---
+  pg:
+    image: pgvector/pgvector:pg16  # trae la extension 'vector' preinstalada
+    container_name: rag-pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${PGUSER:-rag}"
+      POSTGRES_PASSWORD: "${PGPASSWORD:-rag}"
+      POSTGRES_DB: "${PGDATABASE:-rag}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # persiste la base de datos
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-rag} -d ${PGDATABASE:-rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+#  # -----------------------------------------------------------------
+#  # Ollama — modelos offline (embeddings, tagging, generación)
+#  # -----------------------------------------------------------------
+#  ollama:
+#    image: ollama/ollama:latest
+#    container_name: rag-ollama
+#    restart: unless-stopped
+#    ports:
+#      - "11434:11434"
+#    volumes:
+#      - ollama_data:/root/.ollama
+#    healthcheck:
+#      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 5
+
+  # -----------------------------------------------------------------
+  # App — FastAPI + RAG (construida desde Dockerfile)
+  # -----------------------------------------------------------------
+  app:
+    build: .
+    container_name: rag-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deportes
+      # OLLAMA_BASE_URL: http://localhost:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      #ollama:
+      #  condition: service_healthy
+    volumes:
+      # Persistir datos locales (ChromaDB, audit, etc.)
+      - ./output:/app/output
+      - ./data:/app/data
+      - ./queries:/app/queries
+
+# --------------------------------------------------------------
+# Volumes
+# --------------------------------------------------------------
+volumes:
+  pgdata: {}
+  # ollama_data:

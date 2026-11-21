@@ -19,9 +19,9 @@ FastAPI (app.py)  ──►  AgentService del PB2  ──►  RAG + API externa
 │                       MemorySaver en memoria)
 ├── GET  /health                        público
 ├── GET  /docs                          público (Swagger)
-├── POST /ask                           api_key → AskOut
-├── POST /approve                       api_key → AskOut
-└── GET  /threads/{thread_id}/messages  api_key → list[MessageOut]
+├── POST /ask                           api_key -> AskOut
+├── POST /approve                       api_key -> AskOut
+└── GET  /threads/{thread_id}/messages  api_key -> list[MessageOut]
 │
 │  DATABASE_URL
 ▼
@@ -50,7 +50,7 @@ PostgreSQL managed (Render) — historial de producto
 
 ```python
 class AskIn(BaseModel):
-    pregunta: str = Field(..., min_length=1)    # vacía → 422
+    pregunta: str = Field(..., min_length=1)    # vacía -> 422
     thread_id: str = Field(..., min_length=1)   # lo genera el front (uuid)
     auto_aprobar: bool = True                   # cómodo en Swagger
 ```
@@ -62,7 +62,7 @@ class AskOut(BaseModel):
     respuesta: str                 # final_answer del agente
     thread_id: str
     done: bool                     # True solo si el plan se aprobó y se cerró
-    pendiente_hitl: bool           # True → el front debe llamar a /approve
+    pendiente_hitl: bool           # True -> el front debe llamar a /approve
     plan: list[str] = []           # viñetas del plan, para enseñarlas antes de aprobar
     error: Optional[str] = None    # ver §5
 ```
@@ -103,7 +103,7 @@ class HealthOut(BaseModel):
 
 ### `GET /health`
 - **Siempre responde 200**, también sin `API_KEY` configurada (Render y el profesorado lo usan para ver si el servicio está vivo).
-- Hace un `SELECT 1` contra Postgres: `db_ok=True` → `status="ok"`; si falla → `status="degraded"`, `db_ok=False`.
+- Hace un `SELECT 1` contra Postgres: `db_ok=True` -> `status="ok"`; si falla -> `status="degraded"`, `db_ok=False`.
 
 ### `POST /ask`
 
@@ -117,23 +117,23 @@ Cómo se comporta el agente del PB2: si hay plan, el grafo **siempre se para ant
 Pasos:
 1. Asegura la `Conversation` de ese `thread_id`.
 2. Ejecuta el turno.
-3. Si el turno **queda resuelto** → guarda `user` + `assistant` y hace commit.
-4. Si queda en HITL (`auto_aprobar=false`) → guarda la pregunta en `Conversation.pregunta_pendiente`. **No guarda mensajes todavía.**
+3. Si el turno **queda resuelto** -> guarda `user` + `assistant` y hace commit.
+4. Si queda en HITL (`auto_aprobar=false`) -> guarda la pregunta en `Conversation.pregunta_pendiente`. **No guarda mensajes todavía.**
 
 ### `POST /approve`
 1. Lee el `plan_id` vigente con `consultar_estado(thread_id)`.
 2. Llama a `resolver_plan(thread_id, aprobado, plan_id=...)`.
 3. Guarda `user` (desde `pregunta_pendiente`) + `assistant` (respuesta final), limpia `pregunta_pendiente` y hace commit.
 4. Devuelve `AskOut`:
-   - aprobado → `done=true`, `respuesta` = respuesta + "Plan informativo aprobado…"
-   - rechazado → `done=false`, `pendiente_hitl=false`, `respuesta="Propuesta rechazada. Puedes enviar un nuevo pedido."`
+   - aprobado -> `done=true`, `respuesta` = respuesta + "Plan informativo aprobado…"
+   - rechazado -> `done=false`, `pendiente_hitl=false`, `respuesta="Propuesta rechazada. Puedes enviar un nuevo pedido."`
 
 ### Regla de guardado (importante para Postgres)
 > **Se guarda cuando el turno se resuelve (aprobado o rechazado), no cuando `done=true`.**
 > En el PB2, `aplicar` devuelve `done=False` al rechazar. Si se guardara solo con `done`, los rechazos nunca llegarían al historial.
 
 ### `GET /threads/{thread_id}/messages`
-- Devuelve los mensajes del hilo en orden temporal. Hilo inexistente → `[]` (200).
+- Devuelve los mensajes del hilo en orden temporal. Hilo inexistente -> `[]` (200).
 - Lee de Postgres, nunca de memoria. Dos `thread_id` distintos no se mezclan.
 
 ---
@@ -155,7 +155,7 @@ Errores del `AgentService` que se devuelven como **409** (`detail` = código):
 | Código del PB2 | Cuándo |
 |---|---|
 | `HITL_PENDING` | Se manda otra pregunta en un hilo con un plan sin resolver |
-| `REQUEST_INCOMPLETE` | El hilo tiene una ejecución a medias → usar otro `thread_id` |
+| `REQUEST_INCOMPLETE` | El hilo tiene una ejecución a medias -> usar otro `thread_id` |
 | `HITL_NOT_PENDING` | `/approve` sin plan pendiente (también tras reiniciar el servicio) |
 | `PLAN_NOT_CURRENT` / `PLAN_ALREADY_RESOLVED` | Decisión sobre un plan antiguo o ya resuelto |
 
@@ -170,7 +170,7 @@ Errores del `AgentService` que se devuelven como **409** (`detail` = código):
 - **Nunca** en logs: `API_KEY`, la clave del LLM ni `DATABASE_URL`.
 - **429** se demuestra en local contra `GET …/messages` (no gasta LLM). En Render la variable queda puesta y documentada.
 - **504** se demuestra en local bajando `ASK_TIMEOUT_SECONDS`; en Render se deja ~300 s.
-  - Nota: el 504 corta la respuesta HTTP, pero el turno sigue ejecutándose en segundo plano hasta terminar (limitación conocida → informe).
+  - Nota: el 504 corta la respuesta HTTP, pero el turno sigue ejecutándose en segundo plano hasta terminar (limitación conocida -> informe).
 
 ---
 
@@ -200,7 +200,7 @@ Modelo de datos mínimo propuesto (SQLModel, `create_all` al arrancar):
 ## 8. Ciclo de vida y estado en memoria
 
 - `AgentService` se crea **una sola vez** al arrancar FastAPI (`lifespan`) con `crear_servicio(modo="real")` y se reutiliza en todas las peticiones. Si se creara por petición, `/approve` no encontraría el plan.
-- `MemorySaver` (checkpoints del grafo) sigue en memoria. **Un reinicio o un redeploy pierde un HITL a medias** → `/approve` devuelve 409 `HITL_NOT_PENDING`. El historial SQL no se pierde.
+- `MemorySaver` (checkpoints del grafo) sigue en memoria. **Un reinicio o un redeploy pierde un HITL a medias** -> `/approve` devuelve 409 `HITL_NOT_PENDING`. El historial SQL no se pierde.
 - El free tier de Render se duerme tras un rato sin uso: también pierde los HITL a medias.
 
 ---
@@ -247,5 +247,5 @@ Modelo de datos mínimo propuesto (SQLModel, `create_all` al arrancar):
 3. Añadidos `HealthOut`, la salida de `/approve` (`AskOut`) y el campo `plan` en `AskOut`.
 4. Regla de guardado: al resolver el turno (aprobado o rechazado), no solo con `done=true`.
 5. Pregunta pendiente del HITL guardada en `Conversation.pregunta_pendiente`.
-6. Errores del `AgentService` → 409.
+6. Errores del `AgentService` -> 409.
 7. Interfaz interna API ↔ Postgres (§7) para que API y base avancen en paralelo.

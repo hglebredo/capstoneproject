@@ -131,6 +131,7 @@ def responder(pregunta: str, top_k: int | None = None) -> dict[str, Any]:
         with medir_tiempo("retrieval", metricas):
             if RETRIEVAL_MODE == "hibrido":
                 chunks = recuperar_hibrido(pregunta, top_k=k)
+                chunks_vector = chunks  # híbrido ya fusiona; no doble llamada
                 chunks_vector = recuperar(pregunta, top_k=k)
             else:
                 chunks = recuperar(pregunta, top_k=k)

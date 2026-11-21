@@ -27,6 +27,7 @@ from .config import (
     OLLAMA_BASE_URL,
 )
 
+import requests
 # Temperatura: si config.py no la define todavía, usamos 0.2 (apegado al contexto)
 try:
     from .config import GEN_TEMPERATURE
