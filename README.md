@@ -35,3 +35,54 @@ projectcapstone/
 └── entregables/
     └── informe_decisiones.md
 ```
+
+---
+
+## Contrato de la API
+
+Contrato completo (schemas, códigos de error, interfaz con Postgres): [`docs/contrato_api.md`](docs/contrato_api.md).
+
+### Rutas
+
+| Método | Ruta | ¿`api_key`? | Qué hace |
+|--------|------|-------------|----------|
+| GET | `/health` | No | Pulso del servicio y estado de Postgres |
+| GET | `/docs` | No | Swagger con todas las rutas y schemas |
+| POST | `/ask` | **Sí** | Un turno del agente del PB2 |
+| POST | `/approve` | **Sí** | HITL: aprobar o rechazar el plan pendiente |
+| GET | `/threads/{thread_id}/messages` | **Sí** | Historial del hilo, leído de Postgres |
+
+- La `api_key` va en la **query** (`?api_key=...`), para poder probarla en Swagger.
+- Sin clave o con una clave incorrecta → **401**. Body inválido → **422**.
+
+### Probar la API en Swagger
+
+1. Abre `/docs` (local: <http://127.0.0.1:8000/docs>).
+2. En `POST /ask`: **Try it out** → rellena `api_key` → body:
+   ```json
+   {
+     "pregunta": "¿Qué piscinas de verano hay en Madrid y cuánto cuesta la entrada?",
+     "thread_id": "demo-1",
+     "auto_aprobar": true
+   }
+   ```
+   → `200` con `done: true` (el plan se aprueba solo).
+3. HITL manual: repite con otro `thread_id` y `"auto_aprobar": false` → `pendiente_hitl: true` y el `plan`.
+   Después, `POST /approve` con `{"thread_id": "...", "aprobado": true}` (o `false` para rechazar).
+4. `GET /threads/demo-1/messages` → la pregunta y la respuesta guardadas en Postgres.
+
+### Front Streamlit (cliente de la API)
+
+El front vive en `front/` y **solo habla HTTP** con la API: no importa el agente.
+
+```bash
+cd front
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env               # API_KEY (la del servidor) y API_BASE_URL
+streamlit run streamlit_app.py
+```
+
+- `API_BASE_URL=http://127.0.0.1:8000` para la API local, o la URL de Render para la demo.
+- Muestra el estado de `/health`, el chat, el plan con **Aprobar / Rechazar**, el historial y el `thread_id` («Nueva conversación» = otro `thread_id`).
