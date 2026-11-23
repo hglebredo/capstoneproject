@@ -62,11 +62,9 @@ _engine = create_engine(
 
 # --- Sesiones ----------------------------------------------------------------
 
-
 @contextmanager
 def _sesion() -> Iterator[Session]:
-    """Sesión con cierre garantizado: commit si va bien, rollback si falla."""
-    with Session(_engine) as session:
+    with Session(_engine_actual()) as session:
         try:
             yield session
             session.commit()
@@ -75,12 +73,25 @@ def _sesion() -> Iterator[Session]:
             raise
 
 
+
+
+
+def db_ok() -> bool:
+    try:
+        with _engine_actual().connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+
 # --- API pública -------------------------------------------------------------
 
 
+
 def ensure_schema() -> None:
-    """Crea las tablas si no existen. Idempotente (se puede llamar en cada arranque)."""
-    SQLModel.metadata.create_all(_engine)
+    SQLModel.metadata.create_all(_engine_actual())
 
 
 def save_turn(
@@ -140,12 +151,31 @@ def list_messages(thread_id: str) -> list[dict]:
             for m in mensajes
         ]
 
-
 def db_ok() -> bool:
-    """True si Postgres responde a SELECT 1. Nunca lanza excepción."""
     try:
-        with _engine.connect() as conn:
+        with _engine_actual().connect() as conn:
             conn.execute(text("SELECT 1"))
         return True
     except Exception:
         return False
+
+
+# --- Solo para tests: inyectar un engine alternativo ------------------------
+
+_TEST_ENGINE = None
+
+
+def _set_engine_for_tests(engine) -> None:
+    """Permite a los tests usar SQLite en memoria en lugar de Postgres.
+
+    No se usa en producción. El engine global (_engine) sigue siendo el de
+    DATABASE_URL; esta función solo redirige las operaciones a un engine
+    alternativo durante los tests.
+    """
+    global _TEST_ENGINE
+    _TEST_ENGINE = engine
+
+
+def _engine_actual():
+    """Devuelve el engine de tests si está inyectado; si no, el global."""
+    return _TEST_ENGINE if _TEST_ENGINE is not None else _engine
