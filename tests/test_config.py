@@ -34,7 +34,7 @@ def test_embed_provider_default_is_google():
     
     from rag import config as cfg
     
-    assert cfg.EMBED_PROVIDER == "ollama"
+    assert cfg.EMBED_PROVIDER == "google"
 
 
 def test_gen_provider_default_is_google():
@@ -45,7 +45,7 @@ def test_gen_provider_default_is_google():
     
     from rag import config as cfg
     
-    assert cfg.GEN_PROVIDER == "ollama"
+    assert cfg.GEN_PROVIDER == "google"
 
 
 def test_tag_provider_hereda_de_gen():

@@ -25,18 +25,24 @@ API pública (desde la raíz):
     from rag import responder, ejecutar_pipeline
     from rag_utils import init_rag_db  # punto de entrada portable
 """
-from .logic import rag_ask, responder
 
 
 def __getattr__(name):
-    """Lazy import para evitar el warning de sys.modules con `python -m rag.pipeline`."""
+    """Lazy import para evitar carga eager del paquete."""
+    if name == "responder":
+        from .logic import responder as _r
+        return _r
+    if name == "rag_ask":
+        from .logic import rag_ask as _ra
+        return _ra
     if name == "ejecutar_pipeline":
         from .pipeline import ejecutar_pipeline as _ep
         return _ep
+    if name == "_formato_documento":
+        from .load import _formato_documento as _fd
+        return _fd
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-
-from .load import _formato_documento
 
 __all__ = ["responder", "rag_ask", "ejecutar_pipeline", "_formato_documento"]
 

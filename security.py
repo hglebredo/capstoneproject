@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import os
 import time
-import threading
+import threading as _threading
+import hmac as _hmac
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -39,11 +40,13 @@ def require_api_key(request: Request) -> None:
     api_key = (request.query_params.get("api_key")
                or request.headers.get("X-API-Key"))
 
-    if not api_key or api_key != API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API key incorrecta o falta",
-        )
+    if not api_key or _hmac.compare_digest(api_key, API_KEY):
+        return  # valido
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="API key incorrecta o falta",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -56,7 +59,7 @@ class _RateLimiter:
     def __init__(self, max_per_minute: int = RATE_LIMIT_PER_MINUTE):
         self.max_per_minute = max_per_minute
         self._requests: dict[str, list[float]] = defaultdict(list)
-        self._lock = threading.Lock()
+        self._lock = _threading.Lock()
 
     def check(self, ip: str) -> bool:
         """Devuelve True si la peticion esta dentro del limite."""
@@ -121,7 +124,7 @@ def check_timeout() -> None:
 
 def log_request(method: str, path: str, thread_id: str | None, duration_ms: int, status_code: int) -> dict[str, Any]:
     """Log estructurado con los campos que pide el PB3."""
-    return {
+    entry = {
         "method": method,
         "path": path,
         "thread_id": thread_id or "",
@@ -129,3 +132,6 @@ def log_request(method: str, path: str, thread_id: str | None, duration_ms: int,
         "status_code": status_code,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    import logging
+    logging.info("%s %s thread=%s dur=%dms status=%d", entry["method"], entry["path"], entry["thread_id"], entry["duration_ms"], entry["status_code"])
+    return entry

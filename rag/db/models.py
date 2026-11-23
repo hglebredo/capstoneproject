@@ -22,11 +22,19 @@ _engine = None
 
 
 def get_engine(database_url: str | None = None):
-    """Devuelve el engine de SQLAlchemy (singleton). Crea SQLite si no hay URL."""
+    """Devuelve el engine de SQLAlchemy (singleton). Crea SQLite si no hay URL.
+
+    Lee DATABASE_URL del entorno como fallback, igual que hacen health() y rag_utils().
+    """
     global _engine
     if database_url and database_url.strip():
         return create_engine(database_url)
     if _engine is not None:
+        return _engine
+    # Leer de la variable de entorno si está definida
+    env_url = os.environ.get("DATABASE_URL") or os.environ.get("PGVECTOR_DSN")
+    if env_url and env_url.strip():
+        _engine = create_engine(env_url)
         return _engine
     db_path = os.path.join(os.getcwd(), "rag_mlops.db")
     url = f"sqlite:///{db_path}"

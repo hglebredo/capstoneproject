@@ -23,13 +23,12 @@ def _now() -> datetime:
 #  Conversaciones                                                              #
 # --------------------------------------------------------------------------- #
 
-def ensure_conversation(thread_id: str, auto_aprobar: bool = True):
+def ensure_conversation(thread_id: str, auto_aprobar: bool = True, *, engine=None):
     """Asegura que existe una Conversation para este thread_id. La crea si no."""
-    engine = get_engine()
+    eng = engine or get_engine()
     # Crear tablas si no existen (idempotente)
-    Base.metadata.create_all(bind=engine)
-    session = Session(engine, expire_on_commit=True)
-    try:
+    Base.metadata.create_all(bind=eng)
+    with Session(eng, expire_on_commit=True) as session:
         conv = session.query(Conversation).filter_by(thread_id=thread_id).first()
         if not conv:
             conv = Conversation(
@@ -48,9 +47,6 @@ def ensure_conversation(thread_id: str, auto_aprobar: bool = True):
         # Refresh para evitar DetachedInstanceError al acceder a atributos despues
         session.refresh(conv)
         return conv
-    except Exception:
-        session.rollback()
-        raise
 
 
 def get_conversation(thread_id: str, engine=None):
@@ -69,59 +65,59 @@ def add_message(thread_id: str, role: str, content: str, *,
                 tool_calls: list[dict] | None = None) -> dict:
     """Agrega un mensaje al final de la conversacion."""
     engine = get_engine()
-    session = Session(engine)
-    try:
-        conv = session.query(Conversation).filter_by(thread_id=thread_id).first()
-        if not conv:
-            conv = Conversation(
+    with Session(engine) as session:
+        try:
+            conv = session.query(Conversation).filter_by(thread_id=thread_id).first()
+            if not conv:
+                conv = Conversation(
+                    thread_id=thread_id,
+                    auto_aprobar=int(True),
+                    status="active",
+                )
+                session.add(conv)
+                session.flush()
+
+            # siguiente secuencia (dentro de esta sesion)
+            last = session.query(Message).filter_by(conversation_id=conv.id).order_by(Message.sequence.desc()).first()
+            seq = (last.sequence + 1) if last else 0
+
+            msg = Message(
+                conversation_id=conv.id,
                 thread_id=thread_id,
-                auto_aprobar=int(True),
-                status="active",
+                role=role,
+                content=content or "",
+                pending_hitl=int(pending_hitl),
+                done=int(done),
+                sequence=seq,
+                tool_calls=json.dumps(tool_calls) if tool_calls else "",
             )
-            session.add(conv)
-            session.flush()
+            session.add(msg)
 
-        # siguiente secuencia (dentro de esta sesion)
-        last = session.query(Message).filter_by(conversation_id=conv.id).order_by(Message.sequence.desc()).first()
-        seq = (last.sequence + 1) if last else 0
+            # actualizar status de la conversation si es necesario
+            if role == "assistant" and pending_hitl:
+                conv.status = "pending_hitl"
+            elif role == "assistant" and done:
+                conv.status = "closed"
+            conv.updated_at = _now()
 
-        msg = Message(
-            conversation_id=conv.id,
-            thread_id=thread_id,
-            role=role,
-            content=content or "",
-            pending_hitl=int(pending_hitl),
-            done=int(done),
-            sequence=seq,
-            tool_calls=json.dumps(tool_calls) if tool_calls else "",
-        )
-        session.add(msg)
+            session.commit()
 
-        # actualizar status de la conversation si es necesario
-        if role == "assistant" and pending_hitl:
-            conv.status = "pending_hitl"
-        elif role == "assistant" and done:
-            conv.status = "closed"
-        conv.updated_at = _now()
-
-        session.commit()
-
-        # Recargar para evitar DetachedInstanceError
-        msg_refreshed = (session.query(Message)
-                        .filter_by(id=msg.id)
-                        .first())
-        return {
-            "id": msg_refreshed.id,
-            "thread_id": thread_id,
-            "role": role,
-            "content": content or "",
-            "pending_hitl": pending_hitl,
-            "done": done,
-            "sequence": seq,
-        }
-    except Exception:
-        session.rollback()
-        raise
+            # Recargar para evitar DetachedInstanceError
+            msg_refreshed = (session.query(Message)
+                            .filter_by(id=msg.id)
+                            .first())
+            return {
+                "id": msg_refreshed.id,
+                "thread_id": thread_id,
+                "role": role,
+                "content": content or "",
+                "pending_hitl": pending_hitl,
+                "done": done,
+                "sequence": seq,
+            }
+        except Exception:
+            session.rollback()
+            raise
 
 
 def get_messages(thread_id: str, limit: int = 50) -> list[dict]:

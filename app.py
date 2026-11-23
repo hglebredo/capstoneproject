@@ -17,9 +17,11 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from rag.db.models import Conversation as ConvModel
-from rag.db.db_engine import add_message, ensure_conversation, get_messages
-from schemas_mlops import (AskIn, AskOut, ApproveIn, ApproveOut, MessagesOut)
+from sqlalchemy.orm import Session
+from rag.db.models import Conversation as ConvModel, get_engine
+from rag.db.db_engine import _now, add_message, ensure_conversation, get_messages
+from schemas_mlops import (AskIn, AskOut, ApproveIn, ApproveOut, MessageOut,
+                           MessagesOut)
 from security import (ASK_TIMEOUT_SECONDS, API_KEY, check_timeout, log_request,
                       rate_limit_middleware, require_api_key)
 
@@ -110,6 +112,7 @@ async def ask(req: AskIn, request: Request) -> dict:
     done = False
     pendiente_hitl = False
     error = None
+    rag_failed = False
 
     try:
         responder = _get_rag_responder()
@@ -126,14 +129,15 @@ async def ask(req: AskIn, request: Request) -> dict:
 
     except Exception as exc:
         error = str(exc)
+        rag_failed = True
 
-    # Guardar mensaje del asistente
+    # Guardar mensaje del asistente — si el RAG falló, persistir el estado de HITL
     add_message(
         thread_id=req.thread_id,
         role="assistant",
         content=respuesta or "",
-        pending_hitl=False,
-        done=True,
+        pending_hitl=(pendiente_hitl and not req.auto_aprobar) if not rag_failed else False,
+        done=(done if not rag_failed else False),
     )
 
     duration_ms = int((time.time() - t0) * 1000)
@@ -141,6 +145,16 @@ async def ask(req: AskIn, request: Request) -> dict:
 
     # done=True cuando no hay pendiente de HITL o se auto-aprobó.
     done = not pendiente_hitl or req.auto_aprobar
+
+    # Si el RAG falló completamente (respuesta vacía y error), devolver 5xx
+    if rag_failed and not respuesta:
+        return AskOut(
+            respuesta=respuesta,
+            thread_id=req.thread_id,
+            done=False,
+            pendiente_hitl=True,
+            error=error or "Error desconocido en el RAG",
+        )
 
     return AskOut(
         respuesta=respuesta,
@@ -160,10 +174,16 @@ async def approve(req: ApproveIn, request: Request) -> dict:
     """
     t0 = time.time()
 
-    # Actualizar la conversation
+    # Actualizar la conversation — persistir rejected correctamente
     conv = ensure_conversation(req.thread_id, engine=None)
     if conv:
-        conv.status = "closed" if req.aprobado else "rejected"
+        new_status = "closed" if req.aprobado else "rejected"
+        with Session(get_engine()) as session:
+            c = (session.query(Conversation).filter_by(thread_id=req.thread_id).first())
+            if c:
+                c.status = new_status
+                c.updated_at = _now()  # type: ignore[assignment]
+                session.commit()
 
     # Marcar el ultimo mensaje como aprobado/rechazado
     add_message(

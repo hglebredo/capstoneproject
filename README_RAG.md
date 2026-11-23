@@ -45,9 +45,13 @@ capstoneproject/
 ### 1. Configurar el entorno
 
 ```bash
-# Copiar la plantilla y ajustar valores
+# Opción A — despliegue rápido (sin cambios): ya hay .env con valores por defecto
+# Solo edita GOOGLE_API_KEY y API_KEY si lo necesitas:
+code .env
+
+# Opción B — configuración completa desde la plantilla:
 cp .env.rag.example .env
-# Editar .env: GOOGLE_API_KEY, DATABASE_URL, API_KEY, etc.
+# Ajusta las variables según tu proveedor preferido (google / ollama / huggingface)
 ```
 
 ### 2. Inicializar la base de datos relacional (PB3/MLOps)

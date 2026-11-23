@@ -56,10 +56,10 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deportes
+      DATABASE_URL: postgresql://rag:rag@pg:5432/rag
       # OLLAMA_BASE_URL: http://localhost:11434
     depends_on:
-      postgres:
+      pg:
         condition: service_healthy
       #ollama:
       #  condition: service_healthy

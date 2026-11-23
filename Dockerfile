@@ -34,16 +34,17 @@ RUN pip install --no-cache-dir -r requirements-rag.txt
 # --- Stage 3: código y assets ---
 COPY . .
 
-# Cargar variables de entorno si existen
-ENV DATABASE_URL=postgresql://postgres:postgres@localhost:5432/deportes
-ENV API_KEY=cambia-esto
-ENV GOOGLE_API_KEY=""
-ENV GEN_PROVIDER=google
-ENV EMBED_PROVIDER=google
-ENV TAG_PROVIDER=google
-ENV CORS_ORIGINS=*
-ENV ASK_TIMEOUT_SECONDS=300
-ENV RATE_LIMIT_PER_MINUTE=60
+# Las variables de entorno se controlan desde .env (cargado por docker compose env_file
+# o bien con --env-file en docker run). Se mantienen defaults solo como referencia.
+# ENV DATABASE_URL=postgresql://postgres:postgres@localhost:5432/deportes
+# ENV API_KEY=cambia-esto
+# ENV GOOGLE_API_KEY=""
+# ENV GEN_PROVIDER=google
+# ENV EMBED_PROVIDER=google
+# ENV TAG_PROVIDER=google
+# ENV CORS_ORIGINS=*
+# ENV ASK_TIMEOUT_SECONDS=300
+# ENV RATE_LIMIT_PER_MINUTE=60
 
 EXPOSE 8000
 
