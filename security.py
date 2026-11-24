@@ -17,6 +17,7 @@ Nunca se almacenan ni registran las API Keys en texto plano.
 
 import hashlib
 import logging
+import secrets
 import time
 from collections import defaultdict, deque
 from threading import Lock
@@ -38,7 +39,11 @@ logger = logging.getLogger("security")
 def _cliente(request: Request) -> str:
     """Identifica al cliente: por hash de api_key SOLO si es válida; si no, por IP."""
     api_key = request.query_params.get("api_key")
-    if api_key and api_key == config.API_KEY:
+    if (
+        api_key
+        and config.API_KEY
+        and secrets.compare_digest(api_key, config.API_KEY)
+    ):
         hash_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
         return f"key:{hash_key}"
     host = request.client.host if request.client else "unknown"
@@ -81,7 +86,10 @@ def require_api_key(
             detail="Servidor sin API_KEY configurada",
         )
 
-    if not api_key or api_key != config.API_KEY:
+    if (
+        not api_key
+        or not secrets.compare_digest(api_key, config.API_KEY)
+    ):
         logger.warning(
             "401 %s %s (api_key %s)",
             request.method,

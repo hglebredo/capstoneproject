@@ -1,66 +1,91 @@
+
 """
 src/db.py — Persistencia PostgreSQL con SQLModel.
 
-Funciones que app.py espera:
-- ensure_schema()                            → crea tablas al arrancar (idempotente)
-- save_turn(thread_id, pregunta, respuesta)  → guarda user + assistant en una transacción
-- list_messages(thread_id)                   → historial ordenado por id
-- db_ok()                                    → SELECT 1 para /health, nunca lanza
+Funciones públicas:
+- ensure_schema()                            → crea las tablas
+- save_turn(thread_id, pregunta, respuesta)  → guarda user + assistant
+- list_messages(thread_id)                   → recupera el historial
+- db_ok()                                    → comprueba la conexión
 
-Diseño:
-- Engine global (pool reutilizado). pool_pre_ping reconecta si Render cierra la conexión.
-- Normaliza postgres:// → postgresql:// (Render entrega el prefijo antiguo).
-- Sesiones con contextmanager: commit/rollback/close garantizados.
-- save_turn en una transacción: user + assistant juntos o nada.
-- list_messages ordena por id (determinista aunque created_at empate).
+El engine se crea bajo demanda, no al importar el módulo.
 """
 
-import os
 from contextlib import contextmanager
 from datetime import datetime
+from threading import Lock
 from typing import Iterator, Optional
 
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
 
+import config
 from src.models import Conversation, Message
 
 
-# --- Configuración del engine ------------------------------------------------
-
+# --- Configuración ------------------------------------------------------------
 
 def _normalizar_url(url: str) -> str:
-    """Render entrega postgres://; SQLAlchemy quiere postgresql://."""
+    """
+    Fuerza el driver psycopg 3 independientemente del formato de origen.
+
+    Render puede proporcionar postgres:// o postgresql://.
+    """
     if url.startswith("postgres://"):
-        return "postgresql://" + url[len("postgres://"):]
+        url = "postgresql://" + url[len("postgres://"):]
+
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+
     return url
 
 
 def _get_database_url() -> str:
-    """Lee DATABASE_URL del entorno. Sin ella, la app no arranca."""
-    url = os.getenv("DATABASE_URL")
+    """Obtiene DATABASE_URL desde la configuración compartida."""
+    url = config.DATABASE_URL
+
     if not url:
         raise RuntimeError(
             "DATABASE_URL no está definida. Sin Postgres la app no arranca."
         )
+
     return _normalizar_url(url)
 
 
-# Engine global: pool de conexiones reutilizado por todo el proceso.
-# - pool_pre_ping=True  → si la conexión murió (Render la cierra por inactividad),
-#                         el pool la detecta y reconecta antes de usarla.
-# - connect_timeout=3   → si Postgres no responde, falla en ≤3 s (no se cuelga).
-# - pool_timeout=5      → si el pool está lleno, falla en ≤5 s.
-_engine = create_engine(
-    _get_database_url(),
-    echo=False,
-    pool_pre_ping=True,
-    connect_args={"connect_timeout": 3},
-    pool_timeout=5,
-)
+# --- Engine global ------------------------------------------------------------
+
+_engine = None
+_ENGINE_LOCK = Lock()
+
+# Engine alternativo utilizado exclusivamente por los tests.
+_TEST_ENGINE = None
 
 
-# --- Sesiones ----------------------------------------------------------------
+def _engine_actual():
+    """
+    Devuelve el engine de tests si está inyectado.
+    Si no, crea el engine de producción únicamente cuando se necesita.
+    """
+    global _engine
+
+    if _TEST_ENGINE is not None:
+        return _TEST_ENGINE
+
+    if _engine is None:
+        with _ENGINE_LOCK:
+            if _engine is None:
+                _engine = create_engine(
+                    _get_database_url(),
+                    echo=False,
+                    pool_pre_ping=True,
+                    connect_args={"connect_timeout": 3},
+                    pool_timeout=5,
+                )
+
+    return _engine
+
+
+# --- Sesiones -----------------------------------------------------------------
 
 @contextmanager
 def _sesion() -> Iterator[Session]:
@@ -73,24 +98,10 @@ def _sesion() -> Iterator[Session]:
             raise
 
 
-
-
-
-def db_ok() -> bool:
-    try:
-        with _engine_actual().connect() as conn:
-            conn.execute(text("SELECT 1"))
-        return True
-    except Exception:
-        return False
-
-
-
-# --- API pública -------------------------------------------------------------
-
-
+# --- API pública --------------------------------------------------------------
 
 def ensure_schema() -> None:
+    """Crea las tablas si todavía no existen."""
     SQLModel.metadata.create_all(_engine_actual())
 
 
@@ -101,38 +112,55 @@ def save_turn(
     *,
     created_at: Optional[datetime] = None,
 ) -> None:
-    """Guarda la pregunta (user) y la respuesta (assistant) en una transacción.
-
-    Asegura la Conversation de ese thread_id (la crea si no existe).
-    created_at es opcional: solo para tests deterministas.
+    """
+    Guarda la pregunta y la respuesta en una única transacción.
     """
     with _sesion() as session:
         conv = session.exec(
-            select(Conversation).where(Conversation.thread_id == thread_id)
+            select(Conversation).where(
+                Conversation.thread_id == thread_id
+            )
         ).first()
+
         if conv is None:
             conv = Conversation(thread_id=thread_id)
             session.add(conv)
-            session.flush()  # asigna conv.id sin commit
+            session.flush()
 
-        kwargs = {"created_at": created_at} if created_at is not None else {}
-        session.add(Message(
-            conversation_id=conv.id, role="user", content=pregunta, **kwargs,
-        ))
-        session.add(Message(
-            conversation_id=conv.id, role="assistant", content=respuesta, **kwargs,
-        ))
+        kwargs = (
+            {"created_at": created_at}
+            if created_at is not None
+            else {}
+        )
+
+        session.add(
+            Message(
+                conversation_id=conv.id,
+                role="user",
+                content=pregunta,
+                **kwargs,
+            )
+        )
+
+        session.add(
+            Message(
+                conversation_id=conv.id,
+                role="assistant",
+                content=respuesta,
+                **kwargs,
+            )
+        )
 
 
 def list_messages(thread_id: str) -> list[dict]:
-    """Devuelve los mensajes del hilo en orden cronológico (por id).
-
-    Formato compatible con schemas.MessageOut: role, content, created_at.
-    """
+    """Devuelve los mensajes de un hilo ordenados por ID."""
     with _sesion() as session:
         conv = session.exec(
-            select(Conversation).where(Conversation.thread_id == thread_id)
+            select(Conversation).where(
+                Conversation.thread_id == thread_id
+            )
         ).first()
+
         if conv is None:
             return []
 
@@ -151,7 +179,9 @@ def list_messages(thread_id: str) -> list[dict]:
             for m in mensajes
         ]
 
+
 def db_ok() -> bool:
+    """Comprueba PostgreSQL. Nunca propaga errores de conexión."""
     try:
         with _engine_actual().connect() as conn:
             conn.execute(text("SELECT 1"))
@@ -160,22 +190,11 @@ def db_ok() -> bool:
         return False
 
 
-# --- Solo para tests: inyectar un engine alternativo ------------------------
-
-_TEST_ENGINE = None
-
+# --- Inyección de engine para tests -------------------------------------------
 
 def _set_engine_for_tests(engine) -> None:
-    """Permite a los tests usar SQLite en memoria en lugar de Postgres.
-
-    No se usa en producción. El engine global (_engine) sigue siendo el de
-    DATABASE_URL; esta función solo redirige las operaciones a un engine
-    alternativo durante los tests.
+    """
+    Permite sustituir PostgreSQL por SQLite en memoria durante los tests.
     """
     global _TEST_ENGINE
     _TEST_ENGINE = engine
-
-
-def _engine_actual():
-    """Devuelve el engine de tests si está inyectado; si no, el global."""
-    return _TEST_ENGINE if _TEST_ENGINE is not None else _engine

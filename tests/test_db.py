@@ -10,6 +10,7 @@ Para testear db_ok() == False se usa un engine roto (mock).
 from datetime import datetime, timezone
 
 import pytest
+import config
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, create_engine
 
@@ -126,14 +127,30 @@ def test_db_ok_false_con_engine_roto(monkeypatch):
     assert db.db_ok() is False
 
 
+
 def test_normalizar_url():
-    """postgres:// se convierte a postgresql:// (formato de Render)."""
-    assert db._normalizar_url("postgres://u:p@h:5432/db") == "postgresql://u:p@h:5432/db"
-    assert db._normalizar_url("postgresql://u:p@h:5432/db") == "postgresql://u:p@h:5432/db"
+    """Las URL de PostgreSQL utilizan siempre psycopg 3."""
+
+    assert db._normalizar_url(
+        "postgres://u:p@h:5432/db"
+    ) == "postgresql+psycopg://u:p@h:5432/db"
+
+    assert db._normalizar_url(
+        "postgresql://u:p@h:5432/db"
+    ) == "postgresql+psycopg://u:p@h:5432/db"
+
+    assert db._normalizar_url(
+        "postgresql+psycopg://u:p@h:5432/db"
+    ) == "postgresql+psycopg://u:p@h:5432/db"
 
 
 def test_get_database_url_sin_variable_lanza_error(monkeypatch):
-    """Sin DATABASE_URL, la app no arranca (contrato §9)."""
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    with pytest.raises(RuntimeError, match="DATABASE_URL no está definida"):
+    """Sin DATABASE_URL, se produce un error al necesitar PostgreSQL."""
+
+    monkeypatch.setattr(config, "DATABASE_URL", None)
+
+    with pytest.raises(
+        RuntimeError,
+        match="DATABASE_URL no está definida"
+    ):
         db._get_database_url()
