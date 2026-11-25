@@ -212,7 +212,7 @@ QUESTION_SET_RUTA: str = os.getenv(
 GEN_TIMEOUT: int = _int("GEN_TIMEOUT", 140)
 
 # --- ChromaDB ---
-CHROMA_DIR: str = os.getenv("CHROMA_DIR", "./output/chroma_db")
+CHROMA_DIR: str = os.getenv("CHROMA_DIR", "./output/chromadb")
 COLLECTION_NAME: str = os.getenv("COLLECTION_NAME", "deporte_municipal")
 COSINE_SPACE: str = "cosine"
 

@@ -37,3 +37,7 @@ tabulate>=0.10.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.0.0
+
+# PostgreSQL + SQLModel (PB3 — persistencia)
+sqlmodel>=0.0.14
+psycopg[binary]>=3.2.0

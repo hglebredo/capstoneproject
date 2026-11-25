@@ -1,136 +1,182 @@
-"""security.py - API key, rate limit y timeout para el PB3/MLOps.
 
-- api_key: valida contra variable de entorno API_KEY. 401 si falta/incorrecta.
-- rate_limit: cuenta peticiones por IP en ventana de tiempo. 429 si supera RATE_LIMIT_PER_MINUTE.
-- timeout middleware: envia 504 si el turno excede ASK_TIMEOUT_SECONDS.
 """
-from __future__ import annotations
+security.py — Seguridad de la API PB3.
 
-import os
+- require_api_key: valida la API Key.
+    503: API_KEY no configurada en el servidor.
+    401: API Key ausente o incorrecta.
+
+- RateLimitMiddleware: limita las peticiones por cliente.
+    429: límite de peticiones superado.
+    Ventana deslizante de 60 segundos.
+
+- Logging de seguridad para 401, 503 y 429.
+
+Nunca se almacenan ni registran las API Keys en texto plano.
+"""
+
+import hashlib
+import logging
+import secrets
 import time
-import threading as _threading
-import hmac as _hmac
-from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections import defaultdict, deque
+from threading import Lock
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+import config
 
 
-# --------------------------------------------------------------------------- #
-#  API Key                                                                     #
-# --------------------------------------------------------------------------- #
-
-API_KEY: str = os.environ.get("API_KEY", "")
-RATE_LIMIT_PER_MINUTE: int = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "60"))
-ASK_TIMEOUT_SECONDS: int = int(os.environ.get("ASK_TIMEOUT_SECONDS", "300"))
+logger = logging.getLogger("security")
 
 
-def require_api_key(request: Request) -> None:
-    """Dependencia FastAPI para verificar API key.
+# ---------------------------------------------------------------------------
+# Identificación segura del cliente
+# ---------------------------------------------------------------------------
 
-    Lee la clave de query param (para Swagger), header o body.
-    Si no hay API_KEY configurada, salta la validacion (modo dev).
-    Si falta o es incorrecta → 401.
+def _cliente(request: Request) -> str:
+    """Identifica al cliente: por hash de api_key SOLO si es válida; si no, por IP."""
+    api_key = request.query_params.get("api_key")
+    if (
+        api_key
+        and config.API_KEY
+        and secrets.compare_digest(api_key, config.API_KEY)
+    ):
+        hash_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+        return f"key:{hash_key}"
+    host = request.client.host if request.client else "unknown"
+    return f"ip:{host}"
+
+
+def _cliente_para_log(request: Request) -> str:
+    """Devuelve un identificador seguro para los logs."""
+    if request.query_params.get("api_key"):
+        return "api_key"
+
+    host = request.client.host if request.client else "unknown"
+    return f"ip:{host}"
+
+
+# ---------------------------------------------------------------------------
+# Validación API Key
+# ---------------------------------------------------------------------------
+
+def require_api_key(
+    request: Request,
+    api_key: str | None = Query(default=None),
+) -> None:
     """
-    api_key_configurada = os.environ.get("API_KEY") or API_KEY
-    if not api_key_configurada:
-        return  # modo dev sin clave
+    Dependencia FastAPI para proteger las rutas de la API.
 
-    api_key = (request.query_params.get("api_key")
-               or request.headers.get("X-API-Key"))
+    503: el servidor no tiene API_KEY configurada.
+    401: la petición no trae API Key o es incorrecta.
+    """
 
-    if not api_key or not _hmac.compare_digest(api_key, api_key_configurada):
+    if not config.API_KEY:
+        logger.warning(
+            "503 %s %s (servidor sin API_KEY)",
+            request.method,
+            request.url.path,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servidor sin API_KEY configurada",
+        )
+
+    if (
+        not api_key
+        or not secrets.compare_digest(api_key, config.API_KEY)
+    ):
+        logger.warning(
+            "401 %s %s (api_key %s)",
+            request.method,
+            request.url.path,
+            "ausente" if not api_key else "incorrecta",
+        )
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API key incorrecta o falta",
+            detail="API key ausente o incorrecta",
         )
 
 
-# --------------------------------------------------------------------------- #
-#  Rate Limit                                                                  #
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
+# Rate Limit
+# ---------------------------------------------------------------------------
 
-class _RateLimiter:
-    """Contador simple de peticiones por IP en ventana de 60s."""
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware de rate limit mediante ventana deslizante de 60 segundos.
 
-    def __init__(self, max_per_minute: int = RATE_LIMIT_PER_MINUTE):
-        self.max_per_minute = max_per_minute
-        self._requests: dict[str, list[float]] = defaultdict(list)
-        self._lock = _threading.Lock()
+    Cada cliente tiene su propio historial de peticiones.
 
-    def check(self, ip: str) -> bool:
-        """Devuelve True si la peticion esta dentro del limite."""
-        now = time.time()
-        window = 60.0  # segundos
+    - Cliente con API Key: identificador basado en SHA-256 de la clave.
+    - Cliente sin API Key: dirección IP.
+
+    Las rutas públicas quedan excluidas.
+    """
+
+    RUTAS_EXCLUIDAS = frozenset({
+        "/",
+        "/health",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+    })
+
+    VENTANA_SEGUNDOS = 60
+
+    def __init__(self, app, limite: int):
+        super().__init__(app)
+
+        if limite < 1:
+            raise ValueError("El límite de peticiones debe ser mayor que cero")
+
+        self.limite = limite
+        self._historial: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = Lock()
+
+    async def dispatch(self, request: Request, call_next):
+
+        # Las rutas públicas no consumen peticiones.
+        if request.url.path in self.RUTAS_EXCLUIDAS:
+            return await call_next(request)
+
+        cliente = _cliente(request)
+        ahora = time.monotonic()
 
         with self._lock:
-            # limpiar entradas viejas
-            timestamps = self._requests[ip]
-            cutoff = now - window
-            self._requests[ip] = [t for t in timestamps if t > cutoff]
 
-            if len(self._requests[ip]) >= self.max_per_minute:
-                return False
+            cola = self._historial[cliente]
 
-            self._requests[ip].append(now)
-            return True
+            # Eliminar peticiones fuera de la ventana de 60 segundos.
+            while cola and ahora - cola[0] >= self.VENTANA_SEGUNDOS:
+                cola.popleft()
 
+            # Comprobar si el cliente ha superado el límite.
+            if len(cola) >= self.limite:
 
-_rate_limiter = _RateLimiter()
+                logger.warning(
+                    "429 %s %s (rate limit, cliente=%s)",
+                    request.method,
+                    request.url.path,
+                    _cliente_para_log(request),
+                )
 
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={
+                        "detail": "Rate limit superado"
+                    },
+                    headers={
+                        "Retry-After": str(self.VENTANA_SEGUNDOS)
+                    },
+                )
 
-async def rate_limit_middleware(request: Request, call_next: Callable):
-    """Middleware que cuenta peticiones por IP y devuelve 429 si supera el tope."""
-    # Saltar para rutas publicas (/health, /docs)
-    if request.url.path in ("/health", "/docs", "/openapi.json"):
+            # Registrar la petición permitida.
+            cola.append(ahora)
+
         return await call_next(request)
-
-    ip = request.client.host if request.client else "unknown"
-    if not _rate_limiter.check(ip):
-        return JSONResponse(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            content={"detail": f"Rate limit excedido ({RATE_LIMIT_PER_MINUTE}/min)"},
-        )
-
-    response = await call_next(request)
-    return response
-
-
-# --------------------------------------------------------------------------- #
-#  Timeout                                                                     #
-# --------------------------------------------------------------------------- #
-
-def check_timeout() -> None:
-    """Verifica si el turno ha superado ASK_TIMEOUT_SECONDS. Lanza HTTPException 504."""
-    if ASK_TIMEOUT_SECONDS <= 0:
-        return
-    # Se usa en los endpoints /ask para verificar antes de llamar al grafo
-    elapsed = getattr(check_timeout, "_start", time.time())
-    duration_ms = int((time.time() - elapsed) * 1000)
-
-    if duration_ms > ASK_TIMEOUT_SECONDS * 1000:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=f"Timeout: el turno supero {ASK_TIMEOUT_SECONDS}s",
-        )
-
-
-# --------------------------------------------------------------------------- #
-#  Logging                                                                     #
-# --------------------------------------------------------------------------- #
-
-def log_request(method: str, path: str, thread_id: str | None, duration_ms: int, status_code: int) -> dict[str, Any]:
-    """Log estructurado con los campos que pide el PB3."""
-    entry = {
-        "method": method,
-        "path": path,
-        "thread_id": thread_id or "",
-        "duration_ms": duration_ms,
-        "status_code": status_code,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    import logging
-    logging.info("%s %s thread=%s dur=%dms status=%d", entry["method"], entry["path"], entry["thread_id"], entry["duration_ms"], entry["status_code"])
-    return entry
