@@ -40,13 +40,11 @@ def require_api_key(request: Request) -> None:
     api_key = (request.query_params.get("api_key")
                or request.headers.get("X-API-Key"))
 
-    if not api_key or _hmac.compare_digest(api_key, API_KEY):
-        return  # valido
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="API key incorrecta o falta",
-    )
+    if not api_key or not _hmac.compare_digest(api_key, API_KEY):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key incorrecta o falta",
+        )
 
 
 # --------------------------------------------------------------------------- #
