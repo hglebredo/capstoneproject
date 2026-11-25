@@ -34,13 +34,14 @@ def require_api_key(request: Request) -> None:
     Si no hay API_KEY configurada, salta la validacion (modo dev).
     Si falta o es incorrecta → 401.
     """
-    if not API_KEY:
+    api_key_configurada = os.environ.get("API_KEY") or API_KEY
+    if not api_key_configurada:
         return  # modo dev sin clave
 
     api_key = (request.query_params.get("api_key")
                or request.headers.get("X-API-Key"))
 
-    if not api_key or not _hmac.compare_digest(api_key, API_KEY):
+    if not api_key or not _hmac.compare_digest(api_key, api_key_configurada):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key incorrecta o falta",

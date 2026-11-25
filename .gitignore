@@ -224,5 +224,6 @@ __marimo__/
 storage/
 uploads/
 .tmp/
+output/
 
 

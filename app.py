@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from rag.db.models import Conversation as ConvModel, get_engine
+from rag.db.models import Conversation, get_engine
 from rag.db.db_engine import _now, add_message, ensure_conversation, get_messages
 from schemas_mlops import (AskIn, AskOut, ApproveIn, ApproveOut, MessageOut,
                            MessagesOut)

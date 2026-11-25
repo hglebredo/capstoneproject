@@ -1,4 +1,0 @@
-{"pregunta": "Información sobre los polideportivos del municipio", "fuente_esperada": "200186-0-polideportivos.csv", "out_of_corpus": false}
-{"pregunta": "¿Cuál es el presupuesto municipal para deportes en 2027?", "fuente_esperada": null, "out_of_corpus": true}
-{"pregunta": "¿Se puede reservar una pista de pádel online?", "fuente_esperada": null, "out_of_corpus": true}
-{"pregunta": "¿Hay servicio de guardería en los centros deportivos?", "fuente_esperada": null, "out_of_corpus": true}
