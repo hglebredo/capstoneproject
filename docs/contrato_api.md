@@ -4,7 +4,7 @@
 >
 > Primero lo que la API acepta y devuelve; después cómo se conecta por dentro con el agente del PB2 y con Postgres.
 >
-> **Versión 3.** Alineada con el código ya implementado (`app.py`, `schemas.py`, `front/`). Ver §12, "Historial de versiones".
+> **Versión 3.1.** Alineada con el código ya implementado (`app.py`, `schemas.py`, `front/`, `security.py`, `src/db.py`, `src/models.py`). Ver §12, "Historial de versiones".
 
 ---
 
@@ -174,7 +174,13 @@ Errores del `AgentService` que se devuelven como **409** (`detail` = código):
 - **Un log por petición protegida** que llega a la ruta, con este formato:
   `POST /ask thread_id=demo-1 duration_ms=1234 status=200`
 - **Nunca** en logs: `API_KEY`, la clave de Gemini ni `DATABASE_URL`.
-- Los rechazos por clave (401/503) y por rate limit (429) se cortan antes de la ruta: los registra `security.py`.
+- Los rechazos por clave (401/503) y por rate limit (429) se cortan antes de la ruta: los registra `security.py`, sin escribir nunca la clave.
+- **Rate limit** (`RateLimitMiddleware` en `security.py`, registrado en `app.py`):
+  - Ventana deslizante de 60 s, con un tope de `RATE_LIMIT_PER_MINUTE` peticiones por cliente → **429** con cabecera `Retry-After: 60`.
+  - Cliente = hash SHA-256 de la `api_key` si es válida; si no, la IP. Así nadie esquiva el límite rotando claves inválidas.
+  - Rutas públicas excluidas: `/`, `/health`, `/docs`, `/openapi.json`, `/redoc`.
+  - Como todo el equipo usa la misma `API_KEY`, en la práctica el cupo es compartido (límite conocido → informe).
+  - En Render, la API va detrás de un proxy: uvicorn se arranca con `--proxy-headers --forwarded-allow-ips="*"` para que la IP sea la del usuario y no la del proxy.
 - **429** se demuestra en local contra `GET …/messages` (no gasta LLM). En Render la variable queda puesta y documentada.
 - **504** se demuestra en local bajando `ASK_TIMEOUT_SECONDS`; en Render se deja ~300 s.
   - El 504 corta la respuesta HTTP, pero el turno sigue ejecutándose en segundo plano hasta terminar, y entonces se guarda en Postgres (§4).
@@ -200,14 +206,22 @@ def db_ok() -> bool:
     """SELECT 1 contra Postgres, para /health."""
 ```
 
-Modelo de datos mínimo (SQLModel, `create_all` al arrancar):
+Modelo de datos (`src/models.py`, SQLModel, `create_all` al arrancar):
 
 | Tabla | Campos |
 |---|---|
-| `Conversation` | `id` = `thread_id` (PK), `created_at` |
-| `Message` | `id` (PK), `thread_id` (FK), `role`, `content`, `created_at` |
+| `Conversation` | `id` (PK numérica), `thread_id` (único, indexado), `created_at` |
+| `Message` | `id` (PK numérica), `conversation_id` (FK → `conversation.id`), `role`, `content`, `created_at` (indexado) |
 
-`security.py` (Miguel) expone `require_api_key`, que `app.py` usa como `Depends(require_api_key)`. Lee `api_key` por **query** y aplica el rate limit.
+- Relación 1-N `Conversation` → `Message`, con borrado en cascada.
+- `save_turn()` guarda `user` + `assistant` en **una sola transacción**: los dos o ninguno.
+- `list_messages()` ordena por `id`, así el orden es estable aunque dos mensajes tengan el mismo `created_at`.
+- `DATABASE_URL` es **obligatoria**: sin ella la API no arranca (no hay respaldo en un fichero local). `src/db.py` normaliza `postgres://` → `postgresql://`.
+- Conexión robusta: `pool_pre_ping` (reconecta si Render cerró la conexión), `connect_timeout=3` s y `pool_timeout=5` s.
+
+`security.py` (Miguel) expone:
+- `require_api_key(request, api_key)`, que `app.py` usa como `Depends(require_api_key)`. Lee `api_key` por **query**: **503** si el servidor no tiene `API_KEY`, **401** si falta o no coincide (comparación en tiempo constante).
+- `RateLimitMiddleware`, el rate limit (§6).
 
 ---
 
@@ -231,7 +245,7 @@ Modelo de datos mínimo (SQLModel, `create_all` al arrancar):
 | `AGENT_MODE` | `real` (Gemini + RAG) o `demo` (agente simulado, sin LLM, para probar la API) | `real` |
 | `CORS_ORIGINS` | Orígenes permitidos | `http://localhost:8501` |
 | `ASK_TIMEOUT_SECONDS` | Timeout de un turno | `300` |
-| `RATE_LIMIT_PER_MINUTE` | Tope de peticiones por clave y minuto | `30` |
+| `RATE_LIMIT_PER_MINUTE` | Tope de peticiones por cliente (clave válida o IP) y minuto | `30` |
 
 **Proveedor único: Gemini.** Sin Ollama ni HuggingFace en el servicio (Ollama no cabe en el free tier de Render y la demo va contra la URL pública).
 
@@ -281,6 +295,12 @@ Variables (`front/.env`, plantilla en `front/.env.example`):
 ---
 
 ## 12. Historial de versiones
+
+### v3.1 — alineada con la implementación de Postgres y seguridad (Miguel)
+1. Modelo de datos con PK numérica: `Conversation.thread_id` único y `Message.conversation_id` como FK.
+2. Rate limit como middleware (`RateLimitMiddleware`), no dentro de `require_api_key`. Cliente identificado por hash de la clave válida o por IP; `Retry-After: 60`.
+3. `DATABASE_URL` obligatoria; `save_turn()` en una transacción; conexión con `pool_pre_ping` y timeouts.
+4. En Render, uvicorn con `--proxy-headers` para obtener la IP real del usuario.
 
 ### v3 — alineada con el código implementado
 1. La pregunta pendiente del HITL vive **en memoria** (`app.py`), no en Postgres: desaparece `Conversation.pregunta_pendiente`.
