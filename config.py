@@ -50,3 +50,7 @@ CORS_ORIGINS: list[str] = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 
 # Tope de tiempo por turno (POST /ask y /approve) → 504
 ASK_TIMEOUT_SECONDS: int = int(os.getenv("ASK_TIMEOUT_SECONDS", "300"))
+
+# --- PostgreSQL (PB3) ---
+# Sin DATABASE_URL la app no arranca (no hay fallback a fichero local).
+DATABASE_URL: str | None = os.getenv("DATABASE_URL") or None

@@ -30,7 +30,7 @@ from fastapi.responses import RedirectResponse
 import config
 from agentes.runtime import crear_servicio
 from schemas import ApproveIn, AskIn, AskOut, HealthOut, MessageOut
-from security import require_api_key
+from security import require_api_key, RateLimitMiddleware
 from src import db
 
 # Logs a consola. Nunca logueamos API_KEY, la clave de Gemini ni DATABASE_URL.
@@ -78,6 +78,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limit de seguridad.
+app.add_middleware(
+    RateLimitMiddleware,
+    limite=config.RATE_LIMIT_PER_MINUTE,
+)
+
+# CORS.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
