@@ -15,6 +15,9 @@ from .load import _formato_documento
 def _normalizar_page_content(texto: str) -> str:
     """
     Reglas de limpieza (aplica todas en orden):
+      1. Saltos de línea dobles o más -> uno solo.
+      2. Espacios de más (tabs, 3+ espacios) -> uno.
+      3. Líneas vacías repetidas -> eliminar.
       1. Saltos de línea dobles o más → uno solo.
       2. Espacios de más (tabs, 3+ espacios) → uno.
       3. Líneas vacías repetidas → eliminar.

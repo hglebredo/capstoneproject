@@ -35,10 +35,12 @@ _LOTES_HASH = 1 << 20  # 1 MiB por lectura en el hash
 # Cache por directorio: evita reprocesar TAB/OCR por cada PDF del corpus.
 _RESULTADOS_ESPECIALES: dict[Path, dict[str, list[dict]]] = {}
 
+
 from .file_hash import sha256_archivo
 
 
 def _hash_file(ruta: str) -> str:
+    """SHA-256 hex delegada a file_hash.sha256_archivo."""
     return sha256_archivo(ruta)
 
 def _normalizar_source(
@@ -157,7 +159,12 @@ def _load_pdf(
     pdfs_tabulares: set[str],
     pdfs_ocr: set[str],
 ) -> list[Document]:
-    """Carga un PDF con perfiles específicos, TAB, OCR o extracción nativa."""
+    """Carga un PDF con perfiles específicos, TAB, OCR o extracción nativa.
+
+    - TAB: usa los bloques generados por el manifiesto; si no hay, fallback directo.
+    - OCR: usa los bloques OCR generados por el manifiesto.
+    - Resto: extracción nativa con PyPDFLoader.
+    """
     base = os.path.basename(path)
 
     # Perfil específico: no pasar por Markdown ni por extracción genérica.

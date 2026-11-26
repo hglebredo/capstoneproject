@@ -1,0 +1,85 @@
+# ===================================================================
+# RAG - Dependencias para Project Break 3 (MLOps)
+# Portable: funciona desde capstoneproject/ con PYTHONPATH=./rag
+# ===================================================================
+
+# ------------------------------------------------------------------
+# 1. CORE / BASE (infraestructura mínima)
+# ------------------------------------------------------------------
+python-dotenv
+numpy
+pandas
+
+# ------------------------------------------------------------------
+# 2. CARGA DE DOCUMENTOS (parsing de fuentes)
+# ------------------------------------------------------------------
+pdfplumber               # PDF con texto extraíble
+openpyxl                # Excel (.xlsx)
+python-docx             # Word (.docx)
+Pygments                # Resaltado de código en markdown
+pymupdf                 # Lectura rápida de PDFs escaneados
+pypdf                   # PDF alternativo ligero
+
+# ------------------------------------------------------------------
+# 3. OCR / VISION (multimodal)
+# ------------------------------------------------------------------
+Pillow                  # Imágenes y visión artificial
+pytesseract>=0.3.13    # Motor OCR (requiere tesseract-ocr binario)
+
+# ------------------------------------------------------------------
+# 4. GENERACIÓN LLM (proveedores de modelos)
+# ------------------------------------------------------------------
+google-genai>=2.24.0   # SDK Google Gemini (único proveedor PB3)
+google-api-core         # Dependencia de google-genai
+openai                  # Cliente OpenAI (fallback)
+ollama                  # Cliente Python para Ollama local (offline)
+transformers            # Modelos de Hugging Face
+torch                  # Backend de transformers
+sentence-transformers   # Embeddings locales HF
+llm>=0.38              # LLM wrapper genérico
+
+# ------------------------------------------------------------------
+# 5. VECTOR STORES (almacenamiento de embeddings)
+# ------------------------------------------------------------------
+chromadb>=0.4.0        # Vector store local (fallback)
+faiss-cpu              # Vector store FAISS (offline)
+rank_bm25>=0.2.2       # BM25 para búsqueda textual
+
+# ------------------------------------------------------------------
+# 6. POSTGRESQL / PGVECTOR (vector store PostgreSQL)
+# ------------------------------------------------------------------
+psycopg[binary]        # Driver async para PostgreSQL
+pgvector               # Extensión vector de PostgreSQL
+sqlalchemy>=2.0        # ORM + motor de BD relacional
+
+# ------------------------------------------------------------------
+# 7. API REST FastAPI (servidor web)
+# ------------------------------------------------------------------
+fastapi                # Framework web
+uvicorn[standard]      # Servidor ASGI
+pydantic               # Validación de schemas
+httpx                  # Cliente HTTP para llamadas externas
+
+# ------------------------------------------------------------------
+# 8. WORKFLOW / ORQUESTACIÓN (RAG pipeline)
+# ------------------------------------------------------------------
+langchain_core>=1.8.3  # Núcleo de LangChain
+langchain_text_splitters  # Chunking de documentos
+langchain_community     # Integraciones de LangChain
+langgraph              # Orquestación de grafos de estado
+
+# ------------------------------------------------------------------
+# 9. TESTING
+# ------------------------------------------------------------------
+pytest>=9.2.0
+
+# ------------------------------------------------------------------
+# 10. OBSERVABILIDAD (opcional, avanzado)
+# ------------------------------------------------------------------
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
+# opentelemetry-exporter-console (descomentar si se necesita)
+opentelemetry-exporter-otlp-proto-http
+
+
+

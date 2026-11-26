@@ -16,12 +16,14 @@ projectcapstone/
 ├── requirements.txt
 ├── Dockerfile
 ├── .dockerignore
-├── .env.example
+├── .env                    # Variables de entorno (no commitear)
+├── .env.example            # Plantilla completa
 ├── .gitignore
 ├── config.py
 ├── app.py
 ├── schemas.py
 ├── security.py
+├── docker-compose.yml      # App + PostgreSQL (pgvector)
 ├── src/
 │   ├── db.py
 │   ├── models.py
@@ -35,6 +37,24 @@ projectcapstone/
 └── entregables/
     └── informe_decisiones.md
 ```
+
+## Despliegue rápido (sin configuración)
+
+```bash
+# 1. Asegúrate de tener .env (ya incluido con valores por defecto funcionales)
+#    Si necesitas personalizar: cp .env.rag.example .env y edita.
+
+# 2. Levanta todo en un comando (Postgres + App):
+docker compose up --build -d
+
+# 3. Verifica que la app arrancó correctamente:
+curl http://localhost:8000/health
+
+# 4. Abre Swagger UI interactiva:
+#    http://localhost:8000/docs
+```
+
+> **Nota:** El `.env` por defecto usa `google` como proveedor (Gemini), PostgreSQL en el contenedor `pg`, y SQLite fallback si no hay `DATABASE_URL`. Para producción, añade tu `GOOGLE_API_KEY` al `.env`.
 
 ---
 
@@ -61,7 +81,7 @@ Contrato completo (schemas, códigos de error, interfaz con Postgres): [`docs/co
 2. En `POST /ask`: **Try it out** → rellena `api_key` → body:
    ```json
    {
-     "pregunta": "¿Qué piscinas de verano hay en Madrid y cuánto cuesta la entrada?",
+     "pregunta": "¿Qué piscinas públicas hay en el distrito de Moncloa-Aravaca?",
      "thread_id": "demo-1",
      "auto_aprobar": true
    }

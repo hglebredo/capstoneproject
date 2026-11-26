@@ -119,3 +119,52 @@ _Pendiente de consolidar (Héctor). Candidatos detectados durante el desarrollo:
 - **La `api_key` aparece en el access log de uvicorn.** El enunciado pide la clave por query; uvicorn escribe la URL completa en su log. Propuesta: filtrar la clave en el log y aceptarla también en la cabecera `X-API-Key` (el front la enviaría así).
 - **Un reinicio o redeploy pierde el HITL a medias.** El checkpoint del grafo vive en `MemorySaver` (RAM); `/approve` responde 400 `HITL_NOT_PENDING`. El historial en Postgres sí se conserva.
 - **Un 504 no detiene al agente.** Python no puede matar el hilo: el turno termina en segundo plano (sigue gastando cuota) y se guarda al acabar; mientras tanto, otra petición al mismo hilo espera.
+
+---
+
+## 8. Decisiones técnicas
+
+_Base redactada por Héctor; actualizada al código final de `development`._
+
+### D1. FastAPI como framework de la API
+- **Decisión:** FastAPI + uvicorn para exponer el agente del PB2.
+- **Por qué:** genera Swagger (`/docs`) solo a partir del contrato, valida con Pydantic (422 automático) y es el framework visto en los workouts.
+- **Alternativas descartadas:** Flask (sin validación ni Swagger automáticos) y Django (demasiado pesado para una API pequeña).
+
+### D2. PostgreSQL con SQLModel para el historial
+- **Decisión:** historial en PostgreSQL con SQLModel (`src/models.py`, `src/db.py`). **Sin respaldo en SQLite:** sin `DATABASE_URL` la API no arranca.
+- **Tablas:** `Conversation` (`id`, `thread_id` único) y `Message` (`conversation_id` → FK, `role`, `content`, `created_at`).
+- **Por qué:** el historial tiene que sobrevivir a reinicios y redeploys; el disco de Render no es persistente.
+- El RAG sigue usando Chroma (dentro de la imagen) para los embeddings: Postgres es solo para el historial.
+
+### D3. Seguridad: API key, rate limit y timeout
+| Capa | Dónde | Código |
+|---|---|---|
+| API key por query (`?api_key=`) | `security.py` → `require_api_key` | 401 (ausente o incorrecta), 503 (servidor sin `API_KEY`) |
+| Rate limit, ventana de 60 s | `security.py` → `RateLimitMiddleware` | 429 con `Retry-After` |
+| Timeout por turno | `app.py` (hilo con `ASK_TIMEOUT_SECONDS`) | 504 |
+
+- CORS configurable con `CORS_ORIGINS`. Logs con método, ruta, `thread_id`, `duration_ms` y status, sin secretos.
+
+### D4. Proveedor único: Google Gemini
+- **Decisión:** solo Gemini, para generación, etiquetado y embeddings (`gemini-3.6-flash` y `gemini-embedding-2`).
+- **Por qué:** Ollama no cabe en el free tier de Render y la demo va contra la URL pública.
+- **Clave:** `GEMINI_API_KEY` en el panel; `config.py` la copia a `GOOGLE_API_KEY`, que es el nombre que lee el código del PB2.
+
+### D5. HITL con `auto_aprobar` como interruptor
+- `true` → la API aprueba sola el plan (cómodo en Swagger). `false` → devuelve `pendiente_hitl=true` y el `plan`; el front decide con `/approve`.
+- **Regla de guardado:** el turno se guarda cuando ya no espera decisión humana y hay respuesta (aprobado, rechazado o sin plan). Se guarda dentro del hilo del agente, así que un 504 no pierde el turno.
+
+### D6. La API adapta; el agente decide
+- `app.py` no reescribe el grafo: llama al `AgentService` del PB2 (`procesar_turno`, `resolver_plan`, `consultar_estado`). El RAG y la API del Ayuntamiento siguen siendo **tools** del agente.
+- Una sola instancia del agente por proceso (`lifespan`): si se creara por petición, `/approve` no encontraría el plan.
+
+### D7. Docker y Render
+- **Imagen única** (`python:3.12-slim`) con la API, el agente, el corpus y el **índice del RAG construido en el `docker build`**.
+- La clave de Gemini llega al build como **build secret** (Secret File `gemini_api_key` en Render): no queda en la imagen, ni en su historial, ni en los logs.
+- `CMD` con `${PORT:-8000}` (Render inyecta `PORT`) y `--proxy-headers` para obtener la IP real tras el proxy.
+- El índice se construye en una capa propia, antes de copiar el resto del código: cambiar `app.py` no obliga a re-indexar.
+
+### D8. Contrato HTTP con Pydantic (`schemas.py`)
+- `AskIn`, `AskOut`, `ApproveIn`, `MessageOut` y `HealthOut`, definidos **antes** del código en `docs/contrato_api.md` (SDD) y actualizados con la implementación (v3.1).
+
