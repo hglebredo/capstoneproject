@@ -2,6 +2,10 @@
 
 import pytest
 
+# El módulo rag.retrieval.pgvector_store no existe: la base vectorial en la nube
+# queda fuera de alcance en el PB3 (el índice es Chroma, dentro de la imagen).
+pytest.skip("pgvector fuera de alcance en el PB3", allow_module_level=True)
+
 
 class TestPGVectorStore:
     """Tests para el backend PGVector."""
