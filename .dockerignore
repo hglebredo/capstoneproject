@@ -26,8 +26,9 @@ __pycache__/
 .gitignore
 .gitattributes
 
-# Archivos de entorno (se pasan con --env-file)
+# Archivos de entorno y secretos (Render copia los Secret Files al contexto del build)
 .env
+gemini_api_key
 !.dockerignore
 
 # Datos locales pesados
