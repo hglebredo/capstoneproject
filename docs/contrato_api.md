@@ -4,7 +4,7 @@
 >
 > Primero lo que la API acepta y devuelve; después cómo se conecta por dentro con el agente del PB2 y con Postgres.
 >
-> **Versión 3.1.** Alineada con el código ya implementado (`app.py`, `schemas.py`, `front/`, `security.py`, `src/db.py`, `src/models.py`). Ver §12, "Historial de versiones".
+> **Versión 3.2.** Alineada con el código ya implementado (`app.py`, `schemas.py`, `front/`, `security.py`, `src/db.py`, `src/models.py`). Ver §12, "Historial de versiones".
 
 ---
 
@@ -133,7 +133,7 @@ Pasos:
 > **Se guarda cuando el turno ya no espera decisión humana y hay respuesta**: aprobado, rechazado o sin plan.
 > En el PB2, `aplicar` devuelve `done=False` al rechazar. Si se guardara solo con `done=true`, los rechazos nunca llegarían al historial.
 >
-> El guardado ocurre **dentro del hilo del agente**: si la petición HTTP acaba en 504, el turno se guarda igualmente cuando el agente termina en segundo plano.
+> **Limitación conocida:** el guardado se hace en la ruta, después de que el agente responda. Si la petición acaba en **504**, el agente puede seguir trabajando en segundo plano, pero **no está garantizado que ese turno se guarde en PostgreSQL** (ver informe, fallos conocidos).
 
 ### `GET /threads/{thread_id}/messages`
 - Devuelve los mensajes del hilo en orden temporal. Hilo inexistente → `[]` (200).
@@ -180,10 +180,11 @@ Errores del `AgentService` que se devuelven como **409** (`detail` = código):
   - Cliente = hash SHA-256 de la `api_key` si es válida; si no, la IP. Así nadie esquiva el límite rotando claves inválidas.
   - Rutas públicas excluidas: `/`, `/health`, `/docs`, `/openapi.json`, `/redoc`.
   - Como todo el equipo usa la misma `API_KEY`, en la práctica el cupo es compartido (límite conocido → informe).
-  - En Render, la API va detrás de un proxy: uvicorn se arranca con `--proxy-headers --forwarded-allow-ips="*"` para que la IP sea la del usuario y no la del proxy.
+  - El equipo considera **aceptable** este comportamiento (clave válida o, si no, IP). Si el código cambia, se actualiza este contrato.
+  - **Pendiente de implementar** (PR #13, `fix/docker-render`): en Render la API va detrás de un proxy, y uvicorn debe arrancar con `--proxy-headers --forwarded-allow-ips="*"` para que la IP sea la del usuario y no la del proxy. Hasta entonces, las peticiones sin clave válida comparten la IP del proxy.
 - **429** se demuestra en local contra `GET …/messages` (no gasta LLM). En Render la variable queda puesta y documentada.
 - **504** se demuestra en local bajando `ASK_TIMEOUT_SECONDS`; en Render se deja ~300 s.
-  - El 504 corta la respuesta HTTP, pero el turno sigue ejecutándose en segundo plano hasta terminar, y entonces se guarda en Postgres (§4).
+  - El 504 corta la respuesta HTTP. El agente puede seguir ejecutándose en segundo plano, pero ese turno no queda garantizado en Postgres (§4).
   - Mientras tanto, otra petición al mismo `thread_id` espera a que termine (limitación conocida → informe).
 
 ---
@@ -228,7 +229,7 @@ Modelo de datos (`src/models.py`, SQLModel, `create_all` al arrancar):
 ## 8. Ciclo de vida y estado en memoria
 
 - `AgentService` se crea **una sola vez** al arrancar FastAPI (`lifespan`) con `crear_servicio(modo=AGENT_MODE)` y se reutiliza en todas las peticiones. Si se creara por petición, `/approve` no encontraría el plan.
-- En modo `real`, **si falta la clave de Gemini la API no arranca** y muestra un error claro (se ve en los logs del deploy).
+- **Pendiente:** comprobar la clave de Gemini al arrancar. Hoy, si falta, la API arranca y el primer turno en modo `real` falla con 500.
 - En memoria viven el `MemorySaver` (checkpoints del grafo) y la pregunta pendiente de cada hilo. **Un reinicio o un redeploy pierde un HITL a medias** → `/approve` devuelve 400 `HITL_NOT_PENDING`. El historial ya guardado en Postgres no se pierde.
 - El free tier de Render se duerme tras un rato sin uso: también pierde los HITL a medias.
 
@@ -296,11 +297,17 @@ Variables (`front/.env`, plantilla en `front/.env.example`):
 
 ## 12. Historial de versiones
 
+### v3.2 — correcciones tras la revisión de Miguel
+1. El 504 **no garantiza** que el turno se guarde: el guardado está en la ruta, no dentro del hilo del agente (corrige el punto 4 de la v3).
+2. La comprobación de la clave de Gemini al arrancar **no está implementada** (corrige el punto 5 de la v3).
+3. `--proxy-headers` marcado como pendiente (PR #13).
+4. Rate limit: se documenta el comportamiento actual (clave válida o IP) como aceptado por el equipo.
+
 ### v3.1 — alineada con la implementación de Postgres y seguridad (Miguel)
 1. Modelo de datos con PK numérica: `Conversation.thread_id` único y `Message.conversation_id` como FK.
 2. Rate limit como middleware (`RateLimitMiddleware`), no dentro de `require_api_key`. Cliente identificado por hash de la clave válida o por IP; `Retry-After: 60`.
 3. `DATABASE_URL` obligatoria; `save_turn()` en una transacción; conexión con `pool_pre_ping` y timeouts.
-4. En Render, uvicorn con `--proxy-headers` para obtener la IP real del usuario.
+4. En Render, uvicorn con `--proxy-headers` para obtener la IP real del usuario (**pendiente**, PR #13).
 
 ### v3 — alineada con el código implementado
 1. La pregunta pendiente del HITL vive **en memoria** (`app.py`), no en Postgres: desaparece `Conversation.pregunta_pendiente`.

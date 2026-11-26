@@ -118,7 +118,7 @@ _Pendiente de consolidar (Héctor). Candidatos detectados durante el desarrollo:
 
 - **La `api_key` aparece en el access log de uvicorn.** El enunciado pide la clave por query; uvicorn escribe la URL completa en su log. Propuesta: filtrar la clave en el log y aceptarla también en la cabecera `X-API-Key` (el front la enviaría así).
 - **Un reinicio o redeploy pierde el HITL a medias.** El checkpoint del grafo vive en `MemorySaver` (RAM); `/approve` responde 400 `HITL_NOT_PENDING`. El historial en Postgres sí se conserva.
-- **Un 504 no detiene al agente.** Python no puede matar el hilo: el turno termina en segundo plano (sigue gastando cuota) y se guarda al acabar; mientras tanto, otra petición al mismo hilo espera.
+- **Un 504 puede perder el turno del historial.** Python no puede matar el hilo: el agente sigue trabajando en segundo plano (y gastando cuota), pero el guardado en PostgreSQL se hace en la ruta, después de responder, así que ese turno **no queda garantizado en el historial**. Mientras tanto, otra petición al mismo hilo espera. Mejora: guardar el turno dentro del propio hilo del agente.
 
 ---
 
@@ -141,7 +141,7 @@ _Base redactada por Héctor; actualizada al código final de `development`._
 | Capa | Dónde | Código |
 |---|---|---|
 | API key por query (`?api_key=`) | `security.py` → `require_api_key` | 401 (ausente o incorrecta), 503 (servidor sin `API_KEY`) |
-| Rate limit, ventana de 60 s | `security.py` → `RateLimitMiddleware` | 429 con `Retry-After` |
+| Rate limit, ventana de 60 s; cliente = hash de la clave válida o, si no, IP (aceptado por el equipo) | `security.py` → `RateLimitMiddleware` | 429 con `Retry-After` |
 | Timeout por turno | `app.py` (hilo con `ASK_TIMEOUT_SECONDS`) | 504 |
 
 - CORS configurable con `CORS_ORIGINS`. Logs con método, ruta, `thread_id`, `duration_ms` y status, sin secretos.
@@ -153,7 +153,7 @@ _Base redactada por Héctor; actualizada al código final de `development`._
 
 ### D5. HITL con `auto_aprobar` como interruptor
 - `true` → la API aprueba sola el plan (cómodo en Swagger). `false` → devuelve `pendiente_hitl=true` y el `plan`; el front decide con `/approve`.
-- **Regla de guardado:** el turno se guarda cuando ya no espera decisión humana y hay respuesta (aprobado, rechazado o sin plan). Se guarda dentro del hilo del agente, así que un 504 no pierde el turno.
+- **Regla de guardado:** el turno se guarda cuando ya no espera decisión humana y hay respuesta (aprobado, rechazado o sin plan). Limitación: si la petición acaba en 504, no está garantizado que el turno se guarde (ver §7).
 
 ### D6. La API adapta; el agente decide
 - `app.py` no reescribe el grafo: llama al `AgentService` del PB2 (`procesar_turno`, `resolver_plan`, `consultar_estado`). El RAG y la API del Ayuntamiento siguen siendo **tools** del agente.
@@ -162,7 +162,7 @@ _Base redactada por Héctor; actualizada al código final de `development`._
 ### D7. Docker y Render
 - **Imagen única** (`python:3.12-slim`) con la API, el agente, el corpus y el **índice del RAG construido en el `docker build`**.
 - La clave de Gemini llega al build como **build secret** (Secret File `gemini_api_key` en Render): no queda en la imagen, ni en su historial, ni en los logs.
-- `CMD` con `${PORT:-8000}` (Render inyecta `PORT`) y `--proxy-headers` para obtener la IP real tras el proxy.
+- `CMD` con `${PORT:-8000}` (Render inyecta `PORT`). **Pendiente** (PR #13): `--proxy-headers --forwarded-allow-ips="*"` para obtener la IP real del usuario tras el proxy de Render.
 - El índice se construye en una capa propia, antes de copiar el resto del código: cambiar `app.py` no obliga a re-indexar.
 
 ### D8. Contrato HTTP con Pydantic (`schemas.py`)
