@@ -12,6 +12,7 @@ OCR_PSM = os.getenv("OCR_PSM", "6")
 TESSERACT_CMD = os.getenv("TESSERACT_CMD") or os.getenv("OCR_AGENT", "")
 POPPLER_PATH = os.getenv("POPPLER_PATH") or None
 
+
 ########################
 
 def extraer_piscinas(pdf: str | Path) -> list[dict]:

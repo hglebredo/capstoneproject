@@ -1,0 +1,55 @@
+# ===================================================================
+# .dockerignore - Archivos locales que NO se copian al contenedor
+# ===================================================================
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Caché de Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.hypothesis/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Archivos de entorno (se pasan con --env-file)
+.env
+!.dockerignore
+
+# Datos locales pesados
+data/
+output/
+storage/
+uploads/
+.chroma_db/
+
+# Documentación local
+docs/_build/
+*.md.bak
+
+# Scripts temporales
+tempCodeRunnerFile.py
+.tmp/
+
+# Logs y coverage
+*.log
+.coverage*
+htmlcov/
+
+# Render / Deploy (no copiar configuración del host)
+render.yaml
+Dockerfile.*.bak

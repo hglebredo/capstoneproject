@@ -47,14 +47,13 @@ from .embed import (
     exportar_json,
     verificar_modelo_disponible,
 )
+from .file_hash import verificar_archivos_al_final
 from .index import indexar, obtener_guid_chroma
 from .informe import generar_informe
 from .load import cargar_archivos
 from .tsd.dedup import deduplicar
 from .tsd.scoring import puntuar
 from .tsd.tag import etiquetar
-from .file_hash import verificar_archivos_al_final
-from .load import cargar_archivos
 
 
 def _log(fase: str, msg: str) -> None:
@@ -438,13 +437,14 @@ def ejecutar_pipeline(
 
     return info
 
+
 if __name__ == "__main__":
     # Uso (desde la raíz del proyecto):
     #   python -m src.pipeline data --recreate-index
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Pipeline RAG completo: LOAD → CLEAN → TAG → CHUNK → EMBED → SCORING → DEDUP → INDEX"
+        description="Pipeline RAG completo: LOAD -> CLEAN -> TAG -> CHUNK -> EMBED -> SCORING -> DEDUP -> INDEX"
     )
     parser.add_argument("rutas", nargs="+", help="Archivos o carpetas del corpus (p. ej. data)")
     parser.add_argument("--chunk-size", type=int, default=None,
@@ -465,5 +465,5 @@ if __name__ == "__main__":
         chunk_overlap=args.chunk_overlap,
         persist_dir=args.persist_dir,
         collection_name=args.collection,
-        recreate_index=args.recreate_index
+        recreate_index=args.recreate_index,
     ))
