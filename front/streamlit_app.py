@@ -32,6 +32,7 @@ MENSAJES_ERROR = {
     422: "La petición no es válida. Revisa que la pregunta no esté vacía.",
     429: "Demasiadas peticiones en un minuto. Espera un poco y vuelve a intentarlo.",
     500: "Error interno de la API. Prueba de nuevo o revisa los logs del servidor.",
+    502: "El servidor se ha caído o se está reiniciando. Espera un minuto y vuelve a intentarlo.",
     503: "El servidor no tiene API_KEY configurada. Avisa a quien gestiona el despliegue.",
     504: "El agente tardó demasiado. Puede terminar en segundo plano: revisa el historial en un rato.",
 }
@@ -107,6 +108,9 @@ def mostrar_error(status: int | None, datos, accion: str) -> None:
 
     # Lo que dice la API (FastAPI lo devuelve en "detail")
     detalle = datos.get("detail") if isinstance(datos, dict) else datos
+    # Si no es JSON (p. ej. la página de error de Render), no volcamos el HTML entero
+    if isinstance(detalle, str) and len(detalle) > 200:
+        detalle = detalle[:200] + "…"
 
     # Caso 2: 409 = la conversación no está en el estado adecuado (aviso, no fallo)
     if status == 409:
