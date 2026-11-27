@@ -20,7 +20,6 @@ from typing import Any, TypedDict
 import numpy as np
 import requests
 from huggingface_hub import repo_exists
-from sentence_transformers import SentenceTransformer
 
 from .config import (
     EMBED_BATCH_SIZE,
@@ -41,7 +40,7 @@ from .config import (
 )
 
 # Caché: SentenceTransformer se carga una sola vez por modelo (evita `global`)
-_HF_CACHE: dict[str, SentenceTransformer] = {}
+_HF_CACHE: dict[str, Any] = {}
 
 # Firma de los proveedores: (textos, modelo, máximo de dim) -> vectores
 _FN_PROVEEDOR = Callable[[list[str], str | None, int | None], list[list[float]]]
@@ -273,6 +272,10 @@ def _embed_huggingface(
     nombre = model or HF_EMBED_MODEL
 
     if nombre not in _HF_CACHE:
+        # Import perezoso: sentence-transformers arrastra torch (cientos de MB de RAM).
+        # Con EMBED_PROVIDER=google (Render) nunca se carga y el servicio cabe en 512 MB.
+        from sentence_transformers import SentenceTransformer
+
         kwargs: dict[str, str] = {"device": HF_DEVICE}
 
         if HF_TOKEN:
