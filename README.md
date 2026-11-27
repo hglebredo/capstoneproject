@@ -73,7 +73,7 @@ Contrato completo (schemas, códigos de error, interfaz con Postgres): [`docs/co
 | POST | `/approve` | **Sí** | HITL: aprobar o rechazar el plan pendiente |
 | GET | `/threads/{thread_id}/messages` | **Sí** | Historial del hilo, leído de Postgres |
 
-- La `api_key` va en la **query** (`?api_key=...`), para poder probarla en Swagger.
+- La clave va en la **cabecera `X-API-Key`** (así la envía el front) o en la **query** `?api_key=...` (para probar en Swagger). En `/docs`, el botón **Authorize** permite usar cualquiera de las dos.
 - Sin clave o con una clave incorrecta → **401**. Body inválido → **422**.
 - El historial se guarda **solo en PostgreSQL**. SQLite solo aparece en los tests unitarios, que inyectan un engine en memoria (`_set_engine_for_tests`).
 

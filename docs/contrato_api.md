@@ -4,7 +4,7 @@
 >
 > Primero lo que la API acepta y devuelve; después cómo se conecta por dentro con el agente del PB2 y con Postgres.
 >
-> **Versión 3.2.** Alineada con el código ya implementado (`app.py`, `schemas.py`, `front/`, `security.py`, `src/db.py`, `src/models.py`). Ver §12, "Historial de versiones".
+> **Versión 3.3.** Alineada con el código ya implementado (`app.py`, `schemas.py`, `front/`, `security.py`, `src/db.py`, `src/models.py`). Ver §12, "Historial de versiones".
 
 ---
 
@@ -42,7 +42,7 @@ PostgreSQL managed (Render) — historial de producto
 | POST | `/approve` | Sí | HITL: aprobar o rechazar el plan pendiente | `AskOut` |
 | GET  | `/threads/{thread_id}/messages` | Sí | Historial del hilo, leído de Postgres | `list[MessageOut]` |
 
-**Regla de acceso:** `/`, `/health` y `/docs` son públicos. El resto exige `api_key` como parámetro de **query** (`?api_key=...`), para poder probarlo desde Swagger.
+**Regla de acceso:** `/`, `/health` y `/docs` son públicos. El resto exige la clave en la **cabecera `X-API-Key`** (la que usa el front) **o** en el parámetro de **query** `?api_key=...` (lo pide el enunciado, para probar desde Swagger). Si llegan las dos, manda la cabecera. Un filtro oculta `?api_key=` en el access log de uvicorn (`api_key=***`).
 
 ---
 
@@ -221,7 +221,8 @@ Modelo de datos (`src/models.py`, SQLModel, `create_all` al arrancar):
 - Conexión robusta: `pool_pre_ping` (reconecta si Render cerró la conexión), `connect_timeout=3` s y `pool_timeout=5` s.
 
 `security.py` (Miguel) expone:
-- `require_api_key(request, api_key)`, que `app.py` usa como `Depends(require_api_key)`. Lee `api_key` por **query**: **503** si el servidor no tiene `API_KEY`, **401** si falta o no coincide (comparación en tiempo constante).
+- `require_api_key(request, api_key_header, api_key_query)`, que `app.py` usa como `Depends(require_api_key)`. Lee la clave de la cabecera `X-API-Key` o de `?api_key=`: **503** si el servidor no tiene `API_KEY`, **401** si falta o no coincide (comparación en tiempo constante). En Swagger aparece el botón **Authorize** con las dos opciones.
+- `OcultarApiKeyFilter`: filtro del logger `uvicorn.access` que cambia `api_key=<valor>` por `api_key=***`.
 - `RateLimitMiddleware`, el rate limit (§6).
 
 ---
@@ -270,7 +271,7 @@ Variables (`front/.env`, plantilla en `front/.env.example`):
 
 | Variable | Uso |
 |---|---|
-| `API_KEY` | La misma que la del servidor; viaja en `?api_key=` |
+| `API_KEY` | La misma que la del servidor; viaja en la cabecera `X-API-Key` (nunca en la URL) |
 | `API_BASE_URL` | Local: `http://127.0.0.1:8000` · Demo: URL de Render |
 
 ---
@@ -290,12 +291,15 @@ Variables (`front/.env`, plantilla en `front/.env.example`):
 
 - El grafo y las tools del PB2 **no se reescriben**.
 - El front **no importa** `agentes/` ni ejecuta tools: solo HTTP.
-- **`api_key` en query, no en el body**: así Swagger puede enviarla.
+- **Clave en cabecera o en query, nunca en el body**: la cabecera para el front (no queda en logs ni en la URL), la query para Swagger (lo pide el enunciado).
 - **`auto_aprobar` como interruptor**: un modo cómodo para Swagger y otro que obliga a pasar por el HITL del front.
 
 ---
 
 ## 12. Historial de versiones
+
+### v3.3 — revisión de Héctor (PR #13)
+1. La clave se acepta también en la cabecera `X-API-Key`; el front la envía así. `?api_key=` se mantiene por el enunciado y se oculta en el access log de uvicorn.
 
 ### v3.2 — correcciones tras la revisión de Miguel
 1. El 504 **no garantiza** que el turno se guarde: el guardado está en la ruta, no dentro del hilo del agente (corrige el punto 4 de la v3).

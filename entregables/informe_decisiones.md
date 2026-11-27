@@ -17,7 +17,7 @@
                     │  solo HTTP (requests)        │
                     └──────────────┬───────────────┘
                                    │ HTTPS  ·  API_BASE_URL = URL de Render
-                                   │ ?api_key=...  (rutas protegidas)
+                                   │ cabecera X-API-Key  (rutas protegidas)
                                    ▼
 ┌──────────────────────── Render · Web Service (1 contenedor Docker) ────────────────────────┐
 │                                                                                              │
@@ -72,7 +72,8 @@ Contrato completo en [`docs/contrato_api.md`](../docs/contrato_api.md) (v3). Se 
 
 **Cómo se protege**
 
-- La clave viaja en la **query** (`?api_key=...`), como pide el enunciado, para poder probarla en Swagger.
+- El front envía la clave en la **cabecera `X-API-Key`**: no viaja en la URL ni queda en los logs.
+- La API acepta también la **query** (`?api_key=...`), como pide el enunciado, para poder probarla en Swagger. Un filtro la oculta en el access log de uvicorn (`api_key=***`).
 - Respuestas de la capa de seguridad: **401** (clave ausente o incorrecta), **503** (el servidor no tiene `API_KEY` configurada), **429** (rate limit).
 - La clave del servicio y la de Gemini viven solo en el `.env` local y en el panel de Render; nunca en el repositorio ni en nuestros logs.
 
@@ -116,7 +117,7 @@ _Pendiente (Miguel)._
 
 _Pendiente de consolidar (Héctor). Candidatos detectados durante el desarrollo:_
 
-- **La `api_key` aparece en el access log de uvicorn.** El enunciado pide la clave por query; uvicorn escribe la URL completa en su log. Propuesta: filtrar la clave en el log y aceptarla también en la cabecera `X-API-Key` (el front la enviaría así).
+- **La `api_key` aparecía en el access log de uvicorn** (detectado en la revisión de la PR #13). El enunciado pide la clave por query y uvicorn escribe la URL completa en su log. **Resuelto:** la API acepta la cabecera `X-API-Key` (la usa el front) y un filtro oculta `?api_key=` en el log. **Queda:** los logs de peticiones del propio proxy de Render pueden seguir viendo la URL si alguien usa la query; para uso real, siempre la cabecera.
 - **Un reinicio o redeploy pierde el HITL a medias.** El checkpoint del grafo vive en `MemorySaver` (RAM); `/approve` responde 400 `HITL_NOT_PENDING`. El historial en Postgres sí se conserva.
 - **Un 504 puede perder el turno del historial.** Python no puede matar el hilo: el agente sigue trabajando en segundo plano (y gastando cuota), pero el guardado en PostgreSQL se hace en la ruta, después de responder, así que ese turno **no queda garantizado en el historial**. Mientras tanto, otra petición al mismo hilo espera. Mejora: guardar el turno dentro del propio hilo del agente.
 
@@ -140,7 +141,7 @@ _Base redactada por Héctor; actualizada al código final de `development`._
 ### D3. Seguridad: API key, rate limit y timeout
 | Capa | Dónde | Código |
 |---|---|---|
-| API key por query (`?api_key=`) | `security.py` → `require_api_key` | 401 (ausente o incorrecta), 503 (servidor sin `API_KEY`) |
+| API key en cabecera `X-API-Key` o en query `?api_key=` (oculta en el access log) | `security.py` → `require_api_key` | 401 (ausente o incorrecta), 503 (servidor sin `API_KEY`) |
 | Rate limit, ventana de 60 s; cliente = hash de la clave válida o, si no, IP (aceptado por el equipo) | `security.py` → `RateLimitMiddleware` | 429 con `Retry-After` |
 | Timeout por turno | `app.py` (hilo con `ASK_TIMEOUT_SECONDS`) | 504 |
 

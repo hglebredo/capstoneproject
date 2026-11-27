@@ -12,18 +12,23 @@ security.py — Seguridad de la API PB3.
 
 - Logging de seguridad para 401, 503 y 429.
 
-Nunca se almacenan ni registran las API Keys en texto plano.
+La API Key se acepta en la cabecera X-API-Key (la que usa el front) o en el
+parámetro ?api_key= (lo pide el enunciado para probar desde Swagger).
+Nunca se almacenan ni registran las API Keys en texto plano: un filtro oculta
+?api_key= en el access log de uvicorn.
 """
 
 import hashlib
 import logging
+import re
 import secrets
 import time
 from collections import defaultdict, deque
 from threading import Lock
 
-from fastapi import HTTPException, Query, Request, status
+from fastapi import HTTPException, Request, Security, status
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader, APIKeyQuery
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import config
@@ -33,12 +38,61 @@ logger = logging.getLogger("security")
 
 
 # ---------------------------------------------------------------------------
+# Dónde viaja la API Key
+# ---------------------------------------------------------------------------
+
+# auto_error=False: si falta, no responde 403 automáticamente; decidimos aquí (401/503).
+# Swagger muestra ambas en el botón "Authorize".
+_API_KEY_HEADER = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    description="Clave de la API en cabecera (recomendado: no queda en los logs).",
+)
+_API_KEY_QUERY = APIKeyQuery(
+    name="api_key",
+    auto_error=False,
+    description="Clave de la API en la URL (?api_key=), para probar desde Swagger.",
+)
+
+
+def _extraer_api_key(request: Request) -> str | None:
+    """Lee la clave de la cabecera X-API-Key o, si no está, de ?api_key=."""
+    return request.headers.get("X-API-Key") or request.query_params.get("api_key")
+
+
+# ---------------------------------------------------------------------------
+# Filtro del access log: oculta ?api_key= en las líneas de uvicorn
+# ---------------------------------------------------------------------------
+
+_PATRON_API_KEY = re.compile(r"(api_key=)[^&\s\"]+", re.IGNORECASE)
+
+
+class OcultarApiKeyFilter(logging.Filter):
+    """Cambia api_key=<valor> por api_key=*** antes de escribir la línea de log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _PATRON_API_KEY.sub(r"\1***", a) if isinstance(a, str) else a
+                for a in record.args
+            )
+        if isinstance(record.msg, str):
+            record.msg = _PATRON_API_KEY.sub(r"\1***", record.msg)
+        return True
+
+
+# Uvicorn configura sus loggers antes de importar la app, así que el filtro se
+# añade al importar este módulo (app.py importa security).
+logging.getLogger("uvicorn.access").addFilter(OcultarApiKeyFilter())
+
+
+# ---------------------------------------------------------------------------
 # Identificación segura del cliente
 # ---------------------------------------------------------------------------
 
 def _cliente(request: Request) -> str:
     """Identifica al cliente: por hash de api_key SOLO si es válida; si no, por IP."""
-    api_key = request.query_params.get("api_key")
+    api_key = _extraer_api_key(request)
     if (
         api_key
         and config.API_KEY
@@ -52,7 +106,7 @@ def _cliente(request: Request) -> str:
 
 def _cliente_para_log(request: Request) -> str:
     """Devuelve un identificador seguro para los logs."""
-    if request.query_params.get("api_key"):
+    if _extraer_api_key(request):
         return "api_key"
 
     host = request.client.host if request.client else "unknown"
@@ -65,14 +119,17 @@ def _cliente_para_log(request: Request) -> str:
 
 def require_api_key(
     request: Request,
-    api_key: str | None = Query(default=None),
+    api_key_header: str | None = Security(_API_KEY_HEADER),
+    api_key_query: str | None = Security(_API_KEY_QUERY),
 ) -> None:
     """
     Dependencia FastAPI para proteger las rutas de la API.
 
+    Acepta la clave en la cabecera X-API-Key o en ?api_key= (tiene prioridad la cabecera).
     503: el servidor no tiene API_KEY configurada.
     401: la petición no trae API Key o es incorrecta.
     """
+    api_key = api_key_header or api_key_query
 
     if not config.API_KEY:
         logger.warning(

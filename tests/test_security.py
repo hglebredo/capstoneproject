@@ -168,3 +168,48 @@ def test_rate_limit_registra_429(client, caplog):
     assert "429 GET /protected" in caplog.text
     assert "cliente=api_key" in caplog.text
     assert "test-secret" not in caplog.text
+
+# ---------------------------------------------------------------------------
+# Cabecera X-API-Key y filtro del access log
+# ---------------------------------------------------------------------------
+
+def test_api_key_en_cabecera(client):
+    """El front envía la clave en la cabecera X-API-Key: debe funcionar igual que la query."""
+    response = client.get("/protected", headers={"X-API-Key": "test-secret"})
+    assert response.status_code == 200
+
+
+def test_api_key_en_cabecera_incorrecta(client):
+    response = client.get("/protected", headers={"X-API-Key": "incorrecta"})
+    assert response.status_code == 401
+
+
+def test_cabecera_cuenta_para_rate_limit(client):
+    for _ in range(3):
+        assert client.get("/protected", headers={"X-API-Key": "test-secret"}).status_code == 200
+    assert client.get("/protected", headers={"X-API-Key": "test-secret"}).status_code == 429
+
+
+def test_filtro_oculta_api_key_en_access_log():
+    """El access log de uvicorn recibe la ruta con la query: la clave no debe salir en claro."""
+    from security import OcultarApiKeyFilter
+
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 0,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:5000", "GET", "/threads/x/messages?api_key=super-secreta&otro=1", "1.1", 200),
+        None,
+    )
+    assert OcultarApiKeyFilter().filter(record) is True
+    linea = record.getMessage()
+    assert "super-secreta" not in linea
+    assert "api_key=***" in linea
+    assert "otro=1" in linea
+
+
+def test_filtro_instalado_en_uvicorn_access():
+    import security  # noqa: F401  (al importar se instala el filtro)
+    from security import OcultarApiKeyFilter
+
+    filtros = logging.getLogger("uvicorn.access").filters
+    assert any(isinstance(f, OcultarApiKeyFilter) for f in filtros)

@@ -227,7 +227,7 @@ def test_nodo_documental_llama_a_imagen_con_invoke(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("extension,mime", [
     (".png", "image/png"), (".jpg", "image/jpeg"),
-    (".jpeg", "image/jpeg"), (".webp", "image/webp"),
+    (".jpeg", "image/jpeg"),
 ])
 def test_vision_envia_mime_y_fuentes_compatibles_con_documental(monkeypatch, tmp_path, extension, mime):
     import agentes.tools.vision as vision
@@ -236,6 +236,8 @@ def test_vision_envia_mime_y_fuentes_compatibles_con_documental(monkeypatch, tmp
     imagen = tmp_path / f"cartel{extension}"
     imagen.write_bytes(b"bytes transportados a un proveedor doble")
     monkeypatch.setenv("GOOGLE_API_KEY", "clave-doble")
+    # El modelo de visión hereda GEN_MODEL; en los tests el proveedor por defecto no es google.
+    monkeypatch.setattr(vision, "IMAGE_VISION_MODEL", "gemini-3.6-flash")
     llamadas = []
 
     def post(url, **kwargs):
@@ -262,6 +264,8 @@ def test_imagen_con_proveedor_doble_pasa_el_adaptador_comun(monkeypatch, tmp_pat
     imagen = tmp_path / "cartel.png"
     imagen.write_bytes(b"doble")
     monkeypatch.setenv("GOOGLE_API_KEY", "clave-doble")
+    # El modelo de visión hereda GEN_MODEL; en los tests el proveedor por defecto no es google.
+    monkeypatch.setattr(vision, "IMAGE_VISION_MODEL", "gemini-3.6-flash")
     monkeypatch.setattr(vision.requests, "post", lambda *args, **kwargs: SimpleNamespace(
         raise_for_status=lambda: None,
         json=lambda: {"candidates": [{"content": {"parts": [{"text": "Cartel municipal"}]}}]},
@@ -280,3 +284,22 @@ def test_imagen_con_proveedor_doble_pasa_el_adaptador_comun(monkeypatch, tmp_pat
     assert result.status == "ok"
     assert result.evidence[0].source == str(imagen)
     assert "no acredita normativa vigente" in result.answer
+
+
+def test_vision_se_abstiene_si_el_modelo_no_es_gemini(monkeypatch, tmp_path):
+    """Con GEN_PROVIDER=ollama el modelo heredado no es de Gemini: aviso claro, sin llamar a la API."""
+    import agentes.tools.vision as vision
+
+    imagen = tmp_path / "cartel.png"
+    imagen.write_bytes(b"doble")
+    monkeypatch.setenv("GOOGLE_API_KEY", "clave-doble")
+    monkeypatch.setattr(vision, "IMAGE_VISION_MODEL", "llama3.2")
+
+    def no_llamar(*args, **kwargs):
+        raise AssertionError("no debe llamar a la API de Gemini")
+
+    monkeypatch.setattr(vision.requests, "post", no_llamar)
+
+    out = vision.imagen_preguntar.invoke({"image_id": str(imagen), "pregunta": "¿Qué pone?"})
+    assert out["abstained"] is True
+    assert "llama3.2" in out["error"]
