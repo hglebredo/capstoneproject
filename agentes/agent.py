@@ -54,10 +54,6 @@ class AgentService:
             max_iter=self.settings.max_iter,
             checkpointer=checkpointer,
         )
-        self._registry_lock = RLock()
-        self._thread_locks: dict[str, RLock] = {}
-        self._plan_ids: dict[str, str] = {}
-        self._resolved: dict[str, tuple[str, bool]] = {}
 
     @staticmethod
     def _validate_thread(thread_id: str) -> None:

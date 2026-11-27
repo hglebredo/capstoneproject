@@ -15,7 +15,9 @@ Contrato:
 
 Reglas:
 - Nunca lanza excepciones: los errores viajan en "error".
-- Acepta JPG/JPEG, WEBP y PNG.
+- Acepta JPG/JPEG y PNG (los mismos formatos que valida agentes/image_input.py).
+- Si el modelo de visión no es de Gemini (p. ej. GEN_PROVIDER=ollama sin
+  IMAGE_VISION_MODEL), se abstiene con un aviso claro en vez de devolver un 404.
 - Si no hay GOOGLE_API_KEY, informa de visión no disponible y se abstiene.
 """
 
@@ -30,8 +32,8 @@ from langchain_core.tools import tool
 
 from rag.config import IMAGE_VISION_MODEL
 
-FORMATOS_PERMITIDOS = {".jpg", ".jpeg", ".png", ".webp"}
-MIME_POR_EXTENSION = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",}
+FORMATOS_PERMITIDOS = {".jpg", ".jpeg", ".png"}
+MIME_POR_EXTENSION = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
 RAIZ_PROYECTO = Path(__file__).resolve().parents[2]
 IMAGEN_DEMO = RAIZ_PROYECTO / "assets" / "imagen_demo.jpg"
 _API_KEY_AL_IMPORTAR = os.getenv("GOOGLE_API_KEY")
@@ -88,6 +90,14 @@ def imagen_preguntar(image_id: str, pregunta: str = "Describe objetivamente la i
     if not api_key:
         return _abstencion(
             "Visión no disponible: GOOGLE_API_KEY no está definida."
+        )
+
+    # IMAGE_VISION_MODEL hereda GEN_MODEL (rag/config.py). Si GEN_PROVIDER no es
+    # google (p. ej. ollama → llama3.2), Gemini respondería 404: mejor avisar.
+    if not str(IMAGE_VISION_MODEL).startswith("gemini"):
+        return _abstencion(
+            f"Visión no disponible: el modelo de visión '{IMAGE_VISION_MODEL}' no es de Gemini. "
+            "Define IMAGE_VISION_MODEL o usa GEN_PROVIDER=google."
         )
 
     try:

@@ -69,7 +69,7 @@ def llamar_api(metodo: str, ruta: str, body: dict | None = None, timeout: int = 
         r = requests.request(
             metodo,
             f"{base_url}{ruta}",
-            params={"api_key": api_key},
+            headers={"X-API-Key": api_key},  # cabecera: la clave no viaja en la URL ni queda en logs
             json=body,
             timeout=timeout,
         )
