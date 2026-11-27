@@ -227,3 +227,7 @@ uploads/
 output/
 
 
+
+# Bases de datos locales: el historial vive en PostgreSQL (nunca SQLite en el repo)
+*.db
+*.sqlite3

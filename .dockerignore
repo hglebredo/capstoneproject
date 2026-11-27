@@ -26,12 +26,14 @@ __pycache__/
 .gitignore
 .gitattributes
 
-# Archivos de entorno (se pasan con --env-file)
+# Archivos de entorno y secretos (Render copia los Secret Files al contexto del build)
 .env
+gemini_api_key
 !.dockerignore
 
 # Datos locales pesados
-data/
+# data/ SÍ entra en la imagen: el corpus es necesario para construir el índice del RAG.
+# output/ no: el índice se genera dentro de la imagen, no se copia del portátil.
 output/
 storage/
 uploads/
@@ -49,6 +51,13 @@ tempCodeRunnerFile.py
 *.log
 .coverage*
 htmlcov/
+
+# Front: es un cliente local, no va en la imagen de la API
+front/
+
+# Bases de datos locales (el historial vive en PostgreSQL)
+*.db
+*.sqlite3
 
 # Render / Deploy (no copiar configuración del host)
 render.yaml
